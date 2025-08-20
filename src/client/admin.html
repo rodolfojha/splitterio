@@ -1,0 +1,771 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Panel de Administración - Sistema de Crecimiento</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        .content {
+            padding: 40px;
+        }
+
+        .section {
+            margin-bottom: 40px;
+            padding: 25px;
+            border: 2px solid #f0f0f0;
+            border-radius: 10px;
+            background: #fafafa;
+        }
+
+        .section h2 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 1.5em;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 10px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #555;
+        }
+
+        .form-group input[type="number"],
+        .form-group input[type="text"] {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+
+        .form-group input[type="number"]:focus,
+        .form-group input[type="text"]:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 60px;
+            height: 34px;
+        }
+
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 34px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 26px;
+            width: 26px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked + .slider {
+            background-color: #667eea;
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(26px);
+        }
+
+        .toggle-container {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+
+        .toggle-label {
+            font-weight: 600;
+            color: #555;
+        }
+
+        .button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px 30px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s;
+            margin-right: 15px;
+        }
+
+        .button:hover {
+            transform: translateY(-2px);
+        }
+
+        .button:active {
+            transform: translateY(0);
+        }
+
+        .success-message {
+            background: #d4edda;
+            color: #155724;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border: 1px solid #c3e6cb;
+        }
+
+        .error-message {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border: 1px solid #f5c6cb;
+        }
+
+        .info-box {
+            background: #e7f3ff;
+            border: 1px solid #b3d9ff;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+
+        .info-box h3 {
+            color: #0066cc;
+            margin-bottom: 10px;
+        }
+
+        .info-box p {
+            color: #333;
+            line-height: 1.6;
+        }
+
+        .back-button {
+            background: #6c757d;
+            margin-top: 20px;
+        }
+
+        .back-button:hover {
+            background: #5a6268;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Panel de Administración</h1>
+            <p>Configuración del sistema de crecimiento y eventos globales</p>
+        </div>
+
+        <div class="content">
+            <div id="messageContainer"></div>
+
+            <div class="info-box">
+                <h3>📈 Sistema de Crecimiento Dinámico</h3>
+                <p>Este sistema permite configurar diferentes tasas de crecimiento según el tamaño del jugador, 
+                estableciendo límites máximos y cash out automático para mantener el equilibrio del juego.</p>
+            </div>
+
+            <div class="info-box">
+                <h3>🌍 Eventos Globales</h3>
+                <p>Configura eventos automáticos que ocurren durante el juego para mantener la emoción y dinamismo. 
+                Los eventos de velocidad aumentan la velocidad de todos los jugadores, mientras que los eventos de bombas 
+                añaden obstáculos móviles que dividen a los jugadores al tocarlos.</p>
+            </div>
+
+            <form id="growthConfigForm">
+                <!-- Factor de Crecimiento Base -->
+                <div class="section">
+                    <h2>Factor de Crecimiento Base</h2>
+                    <div class="form-group">
+                        <label for="baseGrowthFactor">Multiplicador Base:</label>
+                        <input type="number" id="baseGrowthFactor" name="baseGrowthFactor" step="0.1" min="0.1" max="10" required>
+                        <small>Multiplicador base para la masa ganada por todos los jugadores</small>
+                    </div>
+                </div>
+
+                <!-- Bonus Jugadores Pequeños -->
+                <div class="section">
+                    <h2>Bonus Jugadores Pequeños</h2>
+                    <div class="toggle-container">
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="smallPlayerBonusEnabled" name="smallPlayerBonusEnabled">
+                            <span class="slider"></span>
+                        </label>
+                        <span class="toggle-label">Habilitar bonus para jugadores pequeños</span>
+                    </div>
+                    <div class="form-group">
+                        <label for="smallPlayerMassThreshold">Umbral de Masa:</label>
+                        <input type="number" id="smallPlayerMassThreshold" name="smallPlayerMassThreshold" min="1" max="1000" required>
+                        <small>Masa por debajo de la cual se aplica el bonus de crecimiento</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="smallPlayerMultiplier">Multiplicador:</label>
+                        <input type="number" id="smallPlayerMultiplier" name="smallPlayerMultiplier" step="0.1" min="1" max="10" required>
+                        <small>Multiplicador de crecimiento para jugadores pequeños</small>
+                    </div>
+                </div>
+
+                <!-- Penalización Jugadores Grandes -->
+                <div class="section">
+                    <h2>Penalización Jugadores Grandes</h2>
+                    <div class="toggle-container">
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="largePlayerPenaltyEnabled" name="largePlayerPenaltyEnabled">
+                            <span class="slider"></span>
+                        </label>
+                        <span class="toggle-label">Habilitar penalización para jugadores grandes</span>
+                    </div>
+                    <div class="form-group">
+                        <label for="largePlayerMassThreshold">Umbral de Masa:</label>
+                        <input type="number" id="largePlayerMassThreshold" name="largePlayerMassThreshold" min="1" max="1000" required>
+                        <small>Masa por encima de la cual se aplica la penalización de crecimiento</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="largePlayerMultiplier">Multiplicador:</label>
+                        <input type="number" id="largePlayerMultiplier" name="largePlayerMultiplier" step="0.1" min="0.1" max="1" required>
+                        <small>Multiplicador de crecimiento para jugadores grandes (menor a 1 = más lento)</small>
+                    </div>
+                </div>
+
+                <!-- Límite Máximo de Crecimiento -->
+                <div class="section">
+                    <h2>Límite Máximo de Crecimiento</h2>
+                    <div class="toggle-container">
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="maxGrowthLimitEnabled" name="maxGrowthLimitEnabled">
+                            <span class="slider"></span>
+                        </label>
+                        <span class="toggle-label">Habilitar límite máximo de crecimiento</span>
+                    </div>
+                    <div class="form-group">
+                        <label for="maxMass">Masa Máxima:</label>
+                        <input type="number" id="maxMass" name="maxMass" min="1" max="10000" required>
+                        <small>Masa máxima permitida para los jugadores</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="reductionPercent">Reducción (%):</label>
+                        <input type="number" id="reductionPercent" name="reductionPercent" min="1" max="100" required>
+                        <small>Porcentaje de reducción cuando se alcanza el límite máximo</small>
+                    </div>
+                </div>
+
+                <!-- Cashout Automático -->
+                <div class="section">
+                    <h2>Cashout Automático</h2>
+                    <div class="toggle-container">
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="autoCashoutEnabled" name="autoCashoutEnabled">
+                            <span class="slider"></span>
+                        </label>
+                        <span class="toggle-label">Habilitar cash out automático</span>
+                    </div>
+                    <div class="form-group">
+                        <label for="activationMass">Masa de Activación:</label>
+                        <input type="number" id="activationMass" name="activationMass" min="1" max="10000" required>
+                        <small>Masa a la cual se activa el cash out automático</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="cashoutDelay">Delay (ms):</label>
+                        <input type="number" id="cashoutDelay" name="cashoutDelay" min="1000" max="30000" required>
+                        <small>Delay en milisegundos antes del cash out automático</small>
+                    </div>
+                </div>
+
+                <!-- Configuración de Poderes -->
+                <div class="section">
+                    <h2>⚡ Configuración de Poderes</h2>
+                    <div class="info-box">
+                        <h3>🍇🍎🛡️ Poderes Disponibles</h3>
+                        <p>Configura la duración de cada poder que los jugadores pueden obtener comiendo frutas especiales.</p>
+                    </div>
+                    
+                    <!-- Uvas de Velocidad -->
+                    <div class="form-group">
+                        <label for="speedBoostDuration">🍇 Duración Uvas de Velocidad (segundos):</label>
+                        <input type="number" id="speedBoostDuration" name="speedBoostDuration" min="1" max="300" required>
+                        <small>Duración del poder de velocidad x5 en segundos</small>
+                    </div>
+                    
+                    <!-- Manzana Dorada -->
+                    <div class="form-group">
+                        <label for="massBoostDuration">🍎 Duración Manzana Dorada (segundos):</label>
+                        <input type="number" id="massBoostDuration" name="massBoostDuration" min="1" max="300" required>
+                        <small>Duración del poder de masa x5 en segundos</small>
+                    </div>
+                    
+                    <!-- Escudo Protector -->
+                    <div class="form-group">
+                        <label for="shieldDuration">🛡️ Duración Escudo Protector (segundos):</label>
+                        <input type="number" id="shieldDuration" name="shieldDuration" min="1" max="300" required>
+                        <small>Duración del escudo protector en segundos</small>
+                    </div>
+                </div>
+
+                <!-- Eventos Globales -->
+                <div class="section">
+                    <h2>🌍 Eventos Globales</h2>
+                    <div class="info-box">
+                        <h3>⚡💣 Eventos Automáticos</h3>
+                        <p>Configura los eventos globales que ocurren automáticamente durante el juego para mantener la emoción.</p>
+                    </div>
+                </div>
+
+                <!-- Evento de Velocidad -->
+                <div class="section">
+                    <h2>⚡ Evento de Velocidad</h2>
+                    <div class="toggle-container">
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="speedEventEnabled" name="speedEventEnabled">
+                            <span class="slider"></span>
+                        </label>
+                        <span class="toggle-label">Habilitar evento de velocidad global</span>
+                    </div>
+                    <div class="form-group">
+                        <label for="speedEventInterval">Intervalo (minutos):</label>
+                        <input type="number" id="speedEventInterval" name="speedEventInterval" min="1" max="60" required>
+                        <small>Tiempo entre eventos de velocidad en minutos</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="speedEventDuration">Duración (minutos):</label>
+                        <input type="number" id="speedEventDuration" name="speedEventDuration" min="1" max="10" required>
+                        <small>Duración del evento de velocidad en minutos</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="speedEventMultiplier">Multiplicador de Velocidad:</label>
+                        <input type="number" id="speedEventMultiplier" name="speedEventMultiplier" step="0.1" min="1.1" max="5" required>
+                        <small>Multiplicador de velocidad para todos los jugadores durante el evento</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="speedEventWarningTime">Tiempo de Advertencia (minutos):</label>
+                        <input type="number" id="speedEventWarningTime" name="speedEventWarningTime" min="1" max="5" required>
+                        <small>Tiempo de advertencia antes del evento en minutos</small>
+                    </div>
+                </div>
+
+                <!-- Evento de Bombas -->
+                <div class="section">
+                    <h2>💣 Evento de Bombas</h2>
+                    <div class="toggle-container">
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="bombEventEnabled" name="bombEventEnabled">
+                            <span class="slider"></span>
+                        </label>
+                        <span class="toggle-label">Habilitar evento de bombas</span>
+                    </div>
+                    <div class="form-group">
+                        <label for="bombEventInterval">Intervalo (minutos):</label>
+                        <input type="number" id="bombEventInterval" name="bombEventInterval" min="1" max="60" required>
+                        <small>Tiempo entre eventos de bombas en minutos</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="bombEventDuration">Duración (minutos):</label>
+                        <input type="number" id="bombEventDuration" name="bombEventDuration" min="1" max="10" required>
+                        <small>Duración del evento de bombas en minutos</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="bombEventWarningTime">Tiempo de Advertencia (minutos):</label>
+                        <input type="number" id="bombEventWarningTime" name="bombEventWarningTime" min="1" max="5" required>
+                        <small>Tiempo de advertencia antes del evento en minutos</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="bombCount">Cantidad de Bombas:</label>
+                        <input type="number" id="bombCount" name="bombCount" min="5" max="50" required>
+                        <small>Número de bombas que aparecen en el campo</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="bombSpeed">Velocidad de Bombas:</label>
+                        <input type="number" id="bombSpeed" name="bombSpeed" step="0.1" min="0.5" max="10" required>
+                        <small>Velocidad de movimiento de las bombas</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="bombSize">Tamaño de Bombas:</label>
+                        <input type="number" id="bombSize" name="bombSize" min="10" max="50" required>
+                        <small>Tamaño (radio) de las bombas en píxeles</small>
+                    </div>
+                </div>
+
+                <!-- Configuración de Settings del Juego -->
+                <div class="section">
+                    <h2>⚙️ Configuración de Settings del Juego</h2>
+                    <div class="info-box">
+                        <h3>🎮 Configuración Visual y de Jugabilidad</h3>
+                        <p>Configura las opciones visuales y de jugabilidad que afectan la experiencia del usuario en el juego.</p>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="showBorder">Mostrar Bordes:</label>
+                        <div class="toggle-container">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="showBorder" name="showBorder">
+                                <span class="slider"></span>
+                            </label>
+                            <span class="toggle-label">Mostrar bordes de las células</span>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="showMass">Mostrar Masa:</label>
+                        <div class="toggle-container">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="showMass" name="showMass">
+                                <span class="slider"></span>
+                            </label>
+                            <span class="toggle-label">Mostrar el valor de masa en las células</span>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="continuity">Continuidad de Movimiento:</label>
+                        <div class="toggle-container">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="continuity" name="continuity">
+                                <span class="slider"></span>
+                            </label>
+                            <span class="toggle-label">Continuar moviéndose cuando el mouse sale de pantalla</span>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="roundFood">Comida Redondeada:</label>
+                        <div class="toggle-container">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="roundFood" name="roundFood" checked>
+                                <span class="slider"></span>
+                            </label>
+                            <span class="toggle-label">Mostrar la comida con forma redondeada</span>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="darkMode">Modo Oscuro:</label>
+                        <div class="toggle-container">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="darkMode" name="darkMode">
+                                <span class="slider"></span>
+                            </label>
+                            <span class="toggle-label">Activar modo oscuro</span>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="redZone">Mostrar Zona Roja:</label>
+                        <div class="toggle-container">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="redZone" name="redZone" checked>
+                                <span class="slider"></span>
+                            </label>
+                            <span class="toggle-label">Mostrar la zona roja de daño</span>
+                        </div>
+                    </div>
+                </div>
+
+                <button type="submit" class="button">Actualizar Configuración</button>
+                <button type="button" class="button back-button" onclick="window.location.href='index.html'">Volver al Juego</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // Cargar configuración actual
+        async function loadCurrentConfig() {
+            try {
+                const response = await fetch('/api/growth-config');
+                if (response.ok) {
+                    const config = await response.json();
+                    populateForm(config);
+                } else {
+                    showMessage('Error al cargar la configuración', 'error');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                showMessage('Error de conexión', 'error');
+            }
+        }
+
+        // Poblar el formulario con la configuración actual
+        function populateForm(config) {
+            document.getElementById('baseGrowthFactor').value = config.baseGrowthFactor;
+            
+            // Small player bonus
+            document.getElementById('smallPlayerBonusEnabled').checked = config.smallPlayerBonus.enabled;
+            document.getElementById('smallPlayerMassThreshold').value = config.smallPlayerBonus.massThreshold;
+            document.getElementById('smallPlayerMultiplier').value = config.smallPlayerBonus.multiplier;
+            
+            // Large player penalty
+            document.getElementById('largePlayerPenaltyEnabled').checked = config.largePlayerPenalty.enabled;
+            document.getElementById('largePlayerMassThreshold').value = config.largePlayerPenalty.massThreshold;
+            document.getElementById('largePlayerMultiplier').value = config.largePlayerPenalty.multiplier;
+            
+            // Max growth limit
+            document.getElementById('maxGrowthLimitEnabled').checked = config.maxGrowthLimit.enabled;
+            document.getElementById('maxMass').value = config.maxGrowthLimit.maxMass;
+            document.getElementById('reductionPercent').value = config.maxGrowthLimit.reductionPercent;
+            
+            // Auto cashout
+            document.getElementById('autoCashoutEnabled').checked = config.autoCashout.enabled;
+            document.getElementById('activationMass').value = config.autoCashout.activationMass;
+            document.getElementById('cashoutDelay').value = config.autoCashout.delay;
+            
+            // Powers configuration
+            if (config.powers) {
+                document.getElementById('speedBoostDuration').value = (config.powers.speedBoost?.duration || 20000) / 1000;
+                document.getElementById('massBoostDuration').value = (config.powers.massBoost?.duration || 15000) / 1000;
+                document.getElementById('shieldDuration').value = (config.powers.shield?.duration || 25000) / 1000;
+            } else {
+                // Valores por defecto si no existe la configuración
+                document.getElementById('speedBoostDuration').value = 20;
+                document.getElementById('massBoostDuration').value = 15;
+                document.getElementById('shieldDuration').value = 25;
+            }
+
+            // Global Events configuration
+            if (config.globalEvents) {
+                // Speed Event
+                if (config.globalEvents.speedEvent) {
+                    document.getElementById('speedEventEnabled').checked = config.globalEvents.speedEvent.enabled;
+                    document.getElementById('speedEventInterval').value = config.globalEvents.speedEvent.interval / 60000; // Convertir de ms a minutos
+                    document.getElementById('speedEventDuration').value = config.globalEvents.speedEvent.duration / 60000; // Convertir de ms a minutos
+                    document.getElementById('speedEventMultiplier').value = config.globalEvents.speedEvent.speedMultiplier;
+                    document.getElementById('speedEventWarningTime').value = config.globalEvents.speedEvent.warningTime / 60000; // Convertir de ms a minutos
+                } else {
+                    // Valores por defecto para evento de velocidad
+                    document.getElementById('speedEventEnabled').checked = true;
+                    document.getElementById('speedEventInterval').value = 5;
+                    document.getElementById('speedEventDuration').value = 2;
+                    document.getElementById('speedEventMultiplier').value = 2.0;
+                    document.getElementById('speedEventWarningTime').value = 1;
+                }
+
+                // Bomb Event
+                if (config.globalEvents.bombEvent) {
+                    document.getElementById('bombEventEnabled').checked = config.globalEvents.bombEvent.enabled;
+                    document.getElementById('bombEventInterval').value = config.globalEvents.bombEvent.interval / 60000; // Convertir de ms a minutos
+                    document.getElementById('bombEventDuration').value = config.globalEvents.bombEvent.duration / 60000; // Convertir de ms a minutos
+                    document.getElementById('bombEventWarningTime').value = config.globalEvents.bombEvent.warningTime / 60000; // Convertir de ms a minutos
+                    document.getElementById('bombCount').value = config.globalEvents.bombEvent.bombCount;
+                    document.getElementById('bombSpeed').value = config.globalEvents.bombEvent.bombSpeed;
+                    document.getElementById('bombSize').value = config.globalEvents.bombEvent.bombSize;
+                } else {
+                    // Valores por defecto para evento de bombas
+                    document.getElementById('bombEventEnabled').checked = true;
+                    document.getElementById('bombEventInterval').value = 5;
+                    document.getElementById('bombEventDuration').value = 2;
+                    document.getElementById('bombEventWarningTime').value = 1;
+                    document.getElementById('bombCount').value = 15;
+                    document.getElementById('bombSpeed').value = 3.0;
+                    document.getElementById('bombSize').value = 20;
+                }
+            } else {
+                // Valores por defecto si no existe la configuración de eventos globales
+                document.getElementById('speedEventEnabled').checked = true;
+                document.getElementById('speedEventInterval').value = 5;
+                document.getElementById('speedEventDuration').value = 2;
+                document.getElementById('speedEventMultiplier').value = 2.0;
+                document.getElementById('speedEventWarningTime').value = 1;
+                
+                document.getElementById('bombEventEnabled').checked = true;
+                document.getElementById('bombEventInterval').value = 5;
+                document.getElementById('bombEventDuration').value = 2;
+                document.getElementById('bombEventWarningTime').value = 1;
+                document.getElementById('bombCount').value = 15;
+                document.getElementById('bombSpeed').value = 3.0;
+                document.getElementById('bombSize').value = 20;
+            }
+
+            // Settings configuration
+            if (config.settings) {
+                document.getElementById('showBorder').checked = config.settings.showBorder || false;
+                document.getElementById('showMass').checked = config.settings.showMass || false;
+                document.getElementById('continuity').checked = config.settings.continuity || false;
+                document.getElementById('roundFood').checked = config.settings.roundFood !== false; // Por defecto true
+                document.getElementById('darkMode').checked = config.settings.darkMode || false;
+                document.getElementById('redZone').checked = config.settings.redZone !== false; // Por defecto true
+            } else {
+                // Valores por defecto para settings
+                document.getElementById('showBorder').checked = false;
+                document.getElementById('showMass').checked = false;
+                document.getElementById('continuity').checked = false;
+                document.getElementById('roundFood').checked = true;
+                document.getElementById('darkMode').checked = false;
+                document.getElementById('redZone').checked = true;
+            }
+        }
+
+        // Mostrar mensajes
+        function showMessage(message, type) {
+            const container = document.getElementById('messageContainer');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = type === 'error' ? 'error-message' : 'success-message';
+            messageDiv.textContent = message;
+            
+            container.innerHTML = '';
+            container.appendChild(messageDiv);
+            
+            setTimeout(() => {
+                messageDiv.remove();
+            }, 5000);
+        }
+
+        // Manejar envío del formulario
+        document.getElementById('growthConfigForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(this);
+            const config = {
+                baseGrowthFactor: parseFloat(formData.get('baseGrowthFactor')),
+                smallPlayerBonus: {
+                    enabled: formData.get('smallPlayerBonusEnabled') === 'on',
+                    massThreshold: parseInt(formData.get('smallPlayerMassThreshold')),
+                    multiplier: parseFloat(formData.get('smallPlayerMultiplier'))
+                },
+                largePlayerPenalty: {
+                    enabled: formData.get('largePlayerPenaltyEnabled') === 'on',
+                    massThreshold: parseInt(formData.get('largePlayerMassThreshold')),
+                    multiplier: parseFloat(formData.get('largePlayerMultiplier'))
+                },
+                maxGrowthLimit: {
+                    enabled: formData.get('maxGrowthLimitEnabled') === 'on',
+                    maxMass: parseInt(formData.get('maxMass')),
+                    reductionPercent: parseInt(formData.get('reductionPercent'))
+                },
+                autoCashout: {
+                    enabled: formData.get('autoCashoutEnabled') === 'on',
+                    activationMass: parseInt(formData.get('activationMass')),
+                    delay: parseInt(formData.get('cashoutDelay'))
+                },
+                powers: {
+                    speedBoost: {
+                        duration: parseInt(formData.get('speedBoostDuration')) * 1000 // Convertir a milisegundos
+                    },
+                    massBoost: {
+                        duration: parseInt(formData.get('massBoostDuration')) * 1000 // Convertir a milisegundos
+                    },
+                    shield: {
+                        duration: parseInt(formData.get('shieldDuration')) * 1000 // Convertir a milisegundos
+                    }
+                },
+                globalEvents: {
+                    speedEvent: {
+                        enabled: formData.get('speedEventEnabled') === 'on',
+                        interval: parseInt(formData.get('speedEventInterval')) * 60000, // Convertir a milisegundos
+                        duration: parseInt(formData.get('speedEventDuration')) * 60000, // Convertir a milisegundos
+                        speedMultiplier: parseFloat(formData.get('speedEventMultiplier')),
+                        warningTime: parseInt(formData.get('speedEventWarningTime')) * 60000, // Convertir a milisegundos
+                        countdownAlerts: true,
+                        countdownInterval: 60000 // 1 minuto entre alertas
+                    },
+                    bombEvent: {
+                        enabled: formData.get('bombEventEnabled') === 'on',
+                        interval: parseInt(formData.get('bombEventInterval')) * 60000, // Convertir a milisegundos
+                        duration: parseInt(formData.get('bombEventDuration')) * 60000, // Convertir a milisegundos
+                        warningTime: parseInt(formData.get('bombEventWarningTime')) * 60000, // Convertir a milisegundos
+                        countdownAlerts: true,
+                        countdownInterval: 60000, // 1 minuto entre alertas
+                        bombCount: parseInt(formData.get('bombCount')),
+                        bombSpeed: parseFloat(formData.get('bombSpeed')),
+                        bombSize: parseInt(formData.get('bombSize')),
+                        bombColor: "#ff0000" // Color rojo para las bombas
+                    }
+                },
+                settings: {
+                    showBorder: formData.get('showBorder') === 'on',
+                    showMass: formData.get('showMass') === 'on',
+                    continuity: formData.get('continuity') === 'on',
+                    roundFood: formData.get('roundFood') === 'on',
+                    darkMode: formData.get('darkMode') === 'on',
+                    redZone: formData.get('redZone') === 'on'
+                }
+            };
+
+            try {
+                const response = await fetch('/api/growth-config', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(config)
+                });
+
+                if (response.ok) {
+                    showMessage('Configuración actualizada correctamente', 'success');
+                } else {
+                    const error = await response.json();
+                    showMessage('Error: ' + error.error, 'error');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                showMessage('Error de conexión', 'error');
+            }
+        });
+
+        // Cargar configuración al cargar la página
+        document.addEventListener('DOMContentLoaded', loadCurrentConfig);
+    </script>
+</body>
+</html>

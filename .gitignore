@@ -1,0 +1,8 @@
+node_modules
+npm-debug.log
+.idea
+client/bower_components
+bin
+.env
+.env.local
+.env.production

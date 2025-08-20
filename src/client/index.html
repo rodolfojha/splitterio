@@ -1,0 +1,849 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Splitta.io - Gaming Platform</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎮</text></svg>">
+    
+    <!-- Incluimos Tailwind CSS para el estilizado -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Audio -->
+    <audio id="split_cell" src="audio/split.mp3"></audio>
+    <audio id="spawn_cell" src="audio/spawn.mp3"></audio>
+
+    <!-- CSS Combinado -->
+    <style>
+        /* Definimos la animación para el fondo de lava */
+        @keyframes slide {
+            from {
+                background-position: 0 0;
+            }
+            to {
+                background-position: -1920px 0;
+            }
+        }
+        .background-animated {
+            background-image: url('img/lava.png');
+            background-size: 1920px 1080px;
+            background-repeat: repeat-x;
+            animation: slide 30s linear infinite;
+            width: 100%;
+            height: 100vh;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: -1;
+        }
+
+        /* Estilos para los canvas */
+        .game-canvas {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 80%;
+            height: 80%;
+            max-width: 1200px;
+            max-height: 800px;
+            background-color: transparent;
+            pointer-events: none;
+        }
+        
+        /* Estilos para el círculo de personalización */
+        #customize-canvas {
+            background-color: transparent;
+            border-radius: 9999px;
+            border: 2px solid #374151;
+        }
+        
+        /* Estilos para los botones de Join Game con efecto "gamer" */
+        .gamer-btn {
+            background-image: linear-gradient(to right, #fcd34d, #f97316, #fcd34d);
+            background-size: 200% auto;
+            transition: background-position 0.5s ease-out, transform 0.2s ease-in-out;
+            border: 2px solid rgba(0, 0, 0, 0.2);
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+        }
+        .gamer-btn:hover {
+            background-position: right center;
+            transform: scale(1.02);
+        }
+        
+        /* Estilos para los botones de apuestas */
+        .bet-button {
+            transition: all 0.3s ease;
+            border: 2px solid transparent;
+        }
+        .bet-button:hover {
+            transform: scale(1.05);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+        }
+        .bet-button.selected {
+            border-color: #10b981;
+            box-shadow: 0 0 10px rgba(16, 185, 129, 0.5);
+            background-color: #10b981 !important;
+            color: white !important;
+        }
+
+        /* Área de juego */
+        #gameAreaWrapper {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            opacity: 0;
+            transition: opacity 0.3s;
+            pointer-events: none;
+            z-index: 1000;
+        }
+
+        #gameAreaWrapper.active {
+            opacity: 1;
+            pointer-events: all;
+        }
+
+        canvas {
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.4);
+        }
+        
+        .status-box {
+            position: absolute;
+            padding: 15px;
+            background: rgba(0, 0, 0, 0.8);
+            color: #FFF;
+            font-size: 16px;
+            top: 20px;
+            right: 20px;
+            font-weight: bold;
+            text-align: center;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            z-index: 1001;
+        }
+
+        /* Chat box */
+        .chatbox {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            width: 300px;
+            height: 200px;
+            background: rgba(0, 0, 0, 0.8);
+            border-radius: 8px;
+            z-index: 1001;
+        }
+        .chat-list {
+            padding: 10px;
+            margin: 0;
+            list-style: none;
+            height: 160px;
+            overflow-y: auto;
+            color: white;
+            font-size: 14px;
+        }
+        .chat-input {
+            width: 100%;
+            padding: 10px;
+            background: transparent;
+            border: none;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            outline: none;
+            color: white;
+        }
+
+        /* Game controls */
+        #gameControls {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 1002;
+            display: none !important; /* Ocultar completamente los controles del juego */
+        }
+
+        .exitButton {
+            background: #dc3545;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .exitButton:hover {
+            background: #c82333;
+            transform: scale(1.05);
+        }
+
+        /* Mobile controls */
+        #mobile {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            z-index: 1001;
+        }
+
+        #mobile input[type="image"] {
+            width: 50px;
+            height: 50px;
+            margin: 5px;
+            background: rgba(0, 0, 0, 0.8);
+            border-radius: 50%;
+            padding: 10px;
+        }
+
+        /* Modales */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 2000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.8);
+        }
+
+        .modal-content {
+            background-color: #1f2937;
+            margin: 15% auto;
+            padding: 30px;
+            border-radius: 15px;
+            width: 400px;
+            max-width: 90%;
+            color: white;
+            text-align: center;
+        }
+
+        .modal-content h3 {
+            margin-bottom: 20px;
+            font-size: 24px;
+            font-weight: bold;
+        }
+
+        .modal-content input {
+            width: 100%;
+            padding: 12px;
+            margin: 10px 0;
+            background: #374151;
+            border: 1px solid #4b5563;
+            border-radius: 8px;
+            color: white;
+            font-size: 16px;
+        }
+
+        .modal-content input::placeholder {
+            color: #9ca3af;
+        }
+
+        .modal-content button {
+            width: 100%;
+            padding: 12px;
+            margin: 10px 0;
+            background: #3b82f6;
+            border: none;
+            border-radius: 8px;
+            color: white;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.3s ease;
+        }
+
+        .modal-content button:hover {
+            background: #2563eb;
+        }
+
+        .close {
+            color: #9ca3af;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+            margin-top: -10px;
+        }
+
+        .close:hover {
+            color: white;
+        }
+
+        .error-message {
+            color: #ef4444;
+            margin-top: 10px;
+            font-size: 14px;
+        }
+
+        /* Settings panel */
+        #settings {
+            margin-top: 20px;
+        }
+
+        #settings label {
+            display: block;
+            margin: 10px 0;
+            cursor: pointer;
+        }
+
+        #settings input[type="checkbox"] {
+            margin-right: 10px;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .modal-content {
+                width: 95%;
+                margin: 10% auto;
+                padding: 20px;
+            }
+        }
+        
+    </style>
+</head>
+<body class="font-sans text-white relative overflow-hidden">
+    <!-- Contenedor para el fondo animado -->
+    <div class="background-animated"></div>
+
+    <!-- === ÁREA DE JUEGO (oculta por defecto) === -->
+    <div id="gameAreaWrapper">
+        <!-- Leaderboard -->
+        <div id="status" class="status-box">
+            <span class="title">Leaderboard</span>
+        </div>
+        
+        <!-- Chat -->
+        <div class="chatbox" id="chatbox">
+            <ul id="chatList" class="chat-list"></ul>
+            <input id="chatInput" type="text" class="chat-input" placeholder="Chat here..." maxlength="35" />
+        </div>
+        
+        <!-- Mobile controls -->
+        <div id="mobile">
+            <input type="image" id="split" class="split" src="img/split.png" alt="splitBtn">
+            <input type="image" id="feed" class="feed" src="img/feed.png" alt="feedBtn">
+        </div>
+        
+        <!-- Game controls -->
+        <div id="gameControls" style="display: none;">
+            <button id="exitGameBtn" class="exitButton">Salir del Juego</button>
+        </div>
+        
+        <!-- Canvas principal -->
+        <canvas tabindex="1" id="cvs"></canvas>
+    </div>
+
+    <!-- === SECCIÓN PRINCIPAL DEL JUEGO === -->
+    <div id="mainGameSection" class="relative z-10 p-4">
+        
+        <!-- === TOP BAR === -->
+        <nav class="flex items-center justify-between p-4 bg-transparent backdrop-blur-sm rounded-xl">
+            <div class="text-xl font-bold">
+                <span id="welcomeMessage">Bienvenido: <span class="text-yellow-400" id="userDisplayName">Invitado</span></span>
+            </div>
+            <div class="flex space-x-2">
+                <!-- Botones de autenticación (no autenticado) -->
+                <div id="navNotAuth">
+                    <button id="navGoogleLoginBtn" class="bg-red-600 text-white font-bold py-2 px-4 rounded-full shadow-lg hover:bg-red-700 transition-colors duration-300 mr-2">
+                        <svg class="w-4 h-4 inline mr-1" viewBox="0 0 24 24">
+                            <path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                            <path fill="currentColor" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                            <path fill="currentColor" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                            <path fill="currentColor" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                        </svg>
+                        Google
+                    </button>
+                    <button id="navLoginBtn" class="bg-blue-600 text-white font-bold py-2 px-4 rounded-full shadow-lg hover:bg-blue-700 transition-colors duration-300">
+                        Iniciar Sesión
+                    </button>
+                </div>
+                
+                <!-- Botones de autenticación (autenticado) -->
+                <div id="navAuth" style="display: none;">
+                    <span id="navUserInfo" class="text-yellow-400 mr-4">
+                        <span id="navUserDisplayName"></span> | Balance: $<span id="navUserBalance">0.00</span>
+                    </span>
+                    <button id="navAdminBtn" class="bg-purple-600 text-white font-bold py-2 px-4 rounded-full shadow-lg hover:bg-purple-700 transition-colors duration-300 mr-2">
+                        Admin
+                    </button>
+                    <button id="navLogoutBtn" class="bg-red-500 text-white font-bold py-2 px-4 rounded-full shadow-lg hover:bg-red-600 transition-colors duration-300">
+                        Logout
+                    </button>
+                </div>
+            </div>
+        </nav>
+
+        <!-- === PANELES PRINCIPALES === -->
+        <main class="flex flex-col items-center justify-center h-[calc(100vh-100px)] p-4">
+            <!-- Logo principal y nombre en el centro -->
+            <div class="flex items-center justify-center mb-8">
+                <img src="img/logo.png" alt="Splitta.io Logo" class="w-24 h-24 mr-4 rounded-full object-cover">
+                <span class="text-6xl font-bold italic text-white uppercase">SPLITTA.<span class="text-yellow-400">IO</span></span>
+            </div>
+            
+            <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-3 gap-4 w-full max-w-6xl mt-8">
+                <!-- Columna izquierda: Leaderboard y Settings -->
+                <div class="flex flex-col space-y-4">
+                    <!-- Cuadro 1: Leaderboard -->
+                    <div class="bg-gray-800 bg-opacity-70 backdrop-blur-md rounded-2xl p-6 shadow-xl border-2 border-gray-700 flex flex-col">
+                        <h3 class="text-xl font-bold mb-4">🏆 Leaderboard</h3>
+                        <ul class="w-full space-y-2" id="leaderboardList">
+                            <li class="flex justify-between items-center bg-gray-700 rounded-md p-2">
+                                <span>1. Top Player</span>
+                                <span class="text-green-400">$1,797.83</span>
+                            </li>
+                            <li class="flex justify-between items-center bg-gray-700 rounded-md p-2">
+                                <span>2. Pro Gamer</span>
+                                <span class="text-yellow-400">$1,556.54</span>
+                            </li>
+                            <li class="flex justify-between items-center bg-gray-700 rounded-md p-2">
+                                <span>3. Skilled Player</span>
+                                <span class="text-gray-400">$1,375.15</span>
+                            </li>
+                        </ul>
+                        <button class="mt-4 w-full bg-transparent border-2 border-white text-white font-bold py-2 px-4 rounded-full hover:bg-white hover:text-black transition-colors duration-300">
+                            View Full Leaderboard
+                        </button>
+                    </div>
+
+                    <!-- Cuadro 4: Friends (Settings ocultas) -->
+                    <div class="bg-gray-800 bg-opacity-70 backdrop-blur-md rounded-2xl p-6 shadow-xl border-2 border-gray-700 flex flex-col">
+                        <h3 class="text-xl font-bold mb-4">👥 Friends</h3>
+                        <div class="flex flex-col items-center justify-center mb-4">
+                            <svg class="w-16 h-16 text-gray-400 mb-2" fill="currentColor" viewBox="0 0 20 20">
+                                <path d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd" fill-rule="evenodd"></path>
+                            </svg>
+                            <p class="text-gray-400 text-center">No friends yet... add some!</p>
+                        </div>
+                        <button id="addFriendsBtn" class="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-full hover:bg-blue-700 transition-colors duration-300">
+                            ➕ Add Friends
+                        </button>
+                        
+                        <!-- Settings ocultas pero funcionales -->
+                        <div id="settings" style="display: none;">
+                            <label class="flex items-center mb-3 cursor-pointer">
+                                <input id="visBord" type="checkbox" class="mr-3">
+                                <span>Show border</span>
+                            </label>
+                            <label class="flex items-center mb-3 cursor-pointer">
+                                <input id="showMass" type="checkbox" class="mr-3">
+                                <span>Show mass</span>
+                            </label>
+                            <label class="flex items-center mb-3 cursor-pointer">
+                                <input id="continuity" type="checkbox" class="mr-3">
+                                <span>Continue moving when mouse off-screen</span>
+                            </label>
+                            <label class="flex items-center mb-3 cursor-pointer">
+                                <input id="roundFood" type="checkbox" checked class="mr-3">
+                                <span>Rounded food</span>
+                            </label>
+                            <label class="flex items-center mb-3 cursor-pointer">
+                                <input id="darkMode" type="checkbox" class="mr-3">
+                                <span>Dark Mode</span>
+                            </label>
+                            <label class="flex items-center mb-3 cursor-pointer">
+                                <input id="redZone" type="checkbox" checked class="mr-3">
+                                <span>Show Red Zone</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Columna central: Join Game -->
+                <div class="flex flex-col space-y-4">
+                    <!-- Cuadro 2: Join Game -->
+                    <div class="bg-gray-800 bg-opacity-70 backdrop-blur-md rounded-2xl p-6 shadow-xl border-2 border-gray-700 flex flex-col items-center justify-center">
+                        <!-- Input del nombre -->
+                        <div class="mb-4 w-full">
+                            <div class="flex items-center">
+                                <div class="w-10 h-10 bg-gray-700 rounded-full flex items-center justify-center mr-3">
+                                    👤
+                                </div>
+                                <input type="text" id="playerNameInput" placeholder="Enter your name here" class="flex-grow p-3 rounded-md bg-gray-700 text-white border border-gray-600" maxlength="25">
+                            </div>
+                            <div id="nameError" class="error-message text-center mt-2" style="display: none;">
+                                Nick must be alphanumeric characters only!
+                            </div>
+                        </div>
+                        
+                        <!-- Sección de apuestas -->
+                        <div class="w-full mb-4">
+                            <h4 class="text-center mb-3 font-bold">💰 Selecciona tu apuesta (opcional):</h4>
+                            <div class="flex space-x-2 justify-center mb-3">
+                                <button class="betButton bet-button bg-yellow-400 text-black font-bold py-2 px-4 rounded-md hover:bg-yellow-500 transition-colors duration-300" data-amount="1">$1</button>
+                                <button class="betButton bet-button bg-yellow-400 text-black font-bold py-2 px-4 rounded-md hover:bg-yellow-500 transition-colors duration-300" data-amount="2">$2</button>
+                                <button class="betButton bet-button bg-yellow-400 text-black font-bold py-2 px-4 rounded-md hover:bg-yellow-500 transition-colors duration-300" data-amount="4">$4</button>
+                            </div>
+                            <div class="text-center text-sm text-gray-400 mb-3">
+                                <span id="betStatus">💡 Inicia sesión para apostar, o juega gratis sin apostar</span>
+                            </div>
+                        </div>
+                        
+                        <!-- Botones principales -->
+                        <div id="normalButtons" class="w-full">
+                            <button id="startButton" class="w-full gamer-btn text-black font-bold py-4 px-4 rounded-full shadow-lg text-lg mb-3">
+                                <span id="playButtonText">🎮 PLAY</span>
+                            </button>
+                            <button id="spectateButton" class="w-full bg-purple-600 text-white font-bold py-3 px-4 rounded-full shadow-lg hover:bg-purple-700 transition-colors duration-300 mb-3">
+                                👁️ SPECTATE
+                            </button>
+                        </div>
+                        
+                        <!-- Información del juego -->
+                        <div class="mt-4 flex justify-around w-full text-center">
+                            <div>
+                                <span class="block text-3xl font-bold" id="playersOnline">0</span>
+                                <span class="text-sm text-gray-400">Players Online</span>
+                            </div>
+                            <div>
+                                <span class="block text-3xl font-bold text-yellow-400">$125,685</span>
+                                <span class="text-sm text-gray-400">Global Winnings</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Columna derecha: Wallet y Instructions -->
+                <div class="flex flex-col space-y-4">
+                    <!-- Cuadro 3: Wallet -->
+                    <div class="bg-gray-800 bg-opacity-70 backdrop-blur-md rounded-2xl p-6 shadow-xl border-2 border-gray-700 flex flex-col items-center">
+                        <h3 class="text-xl font-bold mb-4">💰 Wallet</h3>
+                        <div class="text-center mb-4">
+                            <p class="text-4xl font-bold">$<span id="walletBalance">0.00</span></p>
+                            <p class="text-sm text-gray-400">Your Balance</p>
+                        </div>
+                        <div class="flex space-x-2 w-full">
+                            <button id="addFundsBtn" class="flex-1 bg-green-500 text-white font-bold py-2 px-3 rounded-full hover:bg-green-600 transition-colors duration-300 text-sm">
+                                Add Funds
+                            </button>
+                            <button id="cashOutWalletBtn" class="flex-1 bg-purple-600 text-white font-bold py-2 px-3 rounded-full hover:bg-purple-700 transition-colors duration-300 text-sm">
+                                Cash Out
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Cuadro 5: Personalizar -->
+                    <div class="bg-gray-800 bg-opacity-70 backdrop-blur-md rounded-2xl p-6 shadow-xl border-2 border-gray-700 flex flex-col items-center">
+                        <h3 class="text-xl font-bold mb-4">🎨 Personalizar</h3>
+                        
+                                                 <!-- Círculo de preview con skin -->
+                         <div class="relative mb-4">
+                             <div id="skinPreview" class="w-32 h-32 rounded-full overflow-hidden border-4 border-white shadow-lg bg-gradient-to-br from-blue-400 to-purple-600">
+                                 <img id="currentSkin" src="img/skin1.jpg" alt="Skin Preview" class="w-full h-full object-cover">
+                             </div>
+                         </div>
+                        
+                        <!-- Controles de skin -->
+                        <div class="flex space-x-2 mb-4">
+                            <button id="prevSkinBtn" class="bg-gray-600 text-white p-2 rounded-full hover:bg-gray-500 transition-colors duration-300">
+                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+                                </svg>
+                            </button>
+                            <button id="changeSkinBtn" class="bg-gradient-to-r from-purple-500 to-pink-500 text-white font-bold py-2 px-4 rounded-full hover:from-purple-600 hover:to-pink-600 transition-all duration-300 transform hover:scale-105">
+                                🔄 Cambiar Skin
+                            </button>
+                            <button id="nextSkinBtn" class="bg-gray-600 text-white p-2 rounded-full hover:bg-gray-500 transition-colors duration-300">
+                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path>
+                                </svg>
+                            </button>
+                        </div>
+                        
+                        <!-- Información de la skin -->
+                        <div class="text-center text-sm text-gray-300">
+                            <p id="skinInfo">Skin personalizada para tu experiencia única</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modal de login -->
+    <div id="loginModal" class="modal">
+        <div class="modal-content">
+            <span class="close" id="closeLoginModal">&times;</span>
+            <h3>🔐 Iniciar Sesión</h3>
+            <p class="text-center text-gray-400 mb-4">
+                Inicia sesión con Google para jugar y apostar
+            </p>
+            <button id="googleLoginBtn" class="w-full bg-white text-gray-800 font-bold py-3 px-4 rounded-lg shadow-lg hover:bg-gray-100 transition-colors duration-300 flex items-center justify-center">
+                <svg class="w-5 h-5 mr-2" viewBox="0 0 24 24">
+                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                </svg>
+                Continuar con Google
+            </button>
+            <div id="loginError" class="error-message"></div>
+        </div>
+    </div>
+
+    <!-- Canvas decorativo (opcional) -->
+    <canvas id="decorativeCanvas" class="game-canvas" style="display: none;"></canvas>
+
+    <!-- Canvas para personalización -->
+    <canvas id="customize-canvas" width="96" height="96" style="display: none;"></canvas>
+
+    <!-- Elementos originales ocultos (para compatibilidad) -->
+    <div id="startMenuWrapper" style="display: none;">
+        <div id="startMenu">
+            <div id="playerNameSection">
+                <b class="input-error">Nick must be alphanumeric characters only!</b>
+            </div>
+            <div id="betOptions" style="display: none;">
+                <h3>Selecciona tu apuesta:</h3>
+                <button class="betButton" data-amount="1">$1</button>
+                <button class="betButton" data-amount="2">$2</button>
+                <button class="betButton" data-amount="4">$4</button>
+                <button id="cancelBet" class="menuButton">Cancelar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- JS -->
+    <script src="//code.jquery.com/jquery-2.2.0.min.js"></script>
+    <script src="js/app.js"></script>
+    <script>
+        // Script de inicialización del nuevo diseño
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('Splitta.io Interface loaded');
+            
+            // Inicializar funcionalidades
+            initializeModals();
+            initializeBetButtons();
+            initializeWalletSync();
+            initializeFriendsButton();
+            initializeSkinSystem();
+            
+            // Manejar el canvas de personalización
+            initializeCustomizeCanvas();
+        });
+
+        function initializeModals() {
+            const loginModal = document.getElementById('loginModal');
+            const navLoginBtn = document.getElementById('navLoginBtn');
+            const closeLoginModal = document.getElementById('closeLoginModal');
+
+            // Los modales se manejan desde app.js
+            console.log('Modales configurados desde app.js');
+        }
+
+        function initializeBetButtons() {
+            const betButtons = document.querySelectorAll('.betButton');
+            betButtons.forEach(button => {
+                button.addEventListener('click', function() {
+                    // Quitar selección de otros botones
+                    betButtons.forEach(btn => btn.classList.remove('selected'));
+                    // Agregar selección al botón clickeado
+                    this.classList.add('selected');
+                });
+            });
+        }
+
+        function initializeWalletSync() {
+            // Sincronizar el balance del wallet con el balance de navegación
+            const navBalance = document.getElementById('navUserBalance');
+            const walletBalance = document.getElementById('walletBalance');
+            
+            if (navBalance && walletBalance) {
+                const observer = new MutationObserver(function(mutations) {
+                    mutations.forEach(function(mutation) {
+                        if (mutation.type === 'childList' || mutation.type === 'characterData') {
+                            walletBalance.textContent = navBalance.textContent;
+                        }
+                    });
+                });
+                
+                observer.observe(navBalance, {
+                    childList: true,
+                    characterData: true,
+                    subtree: true
+                });
+                
+                // Sincronizar inicialmente
+                walletBalance.textContent = navBalance.textContent;
+            }
+        }
+
+        function initializeFriendsButton() {
+            const addFriendsBtn = document.getElementById('addFriendsBtn');
+            if (addFriendsBtn) {
+                addFriendsBtn.addEventListener('click', function() {
+                    // Por ahora mostrar un mensaje, pero aquí se puede implementar la funcionalidad de amigos
+                    alert('Funcionalidad de amigos próximamente disponible! 🎮');
+                });
+            }
+        }
+
+        function initializeSkinSystem() {
+            const skins = [
+                { id: 1, src: 'img/skin1.jpg', name: 'Skin Clásica', description: 'Diseño clásico y elegante' },
+                { id: 2, src: 'img/skin2.jpg', name: 'Skin Neon', description: 'Estilo futurista con colores vibrantes' },
+                { id: 3, src: 'img/skin3.jpg', name: 'Skin Galaxy', description: 'Inspirada en el espacio profundo' },
+                { id: 4, src: 'img/skin4.jpg', name: 'Skin Fire', description: 'Diseño ardiente y poderoso' }
+            ];
+            
+            let currentSkinIndex = 0;
+            const currentSkinImg = document.getElementById('currentSkin');
+            const skinInfo = document.getElementById('skinInfo');
+            const prevSkinBtn = document.getElementById('prevSkinBtn');
+            const nextSkinBtn = document.getElementById('nextSkinBtn');
+            const changeSkinBtn = document.getElementById('changeSkinBtn');
+            
+            function updateSkin() {
+                const skin = skins[currentSkinIndex];
+                currentSkinImg.src = skin.src;
+                skinInfo.textContent = skin.description;
+                
+                // Efecto de transición suave
+                currentSkinImg.style.opacity = '0';
+                setTimeout(() => {
+                    currentSkinImg.style.opacity = '1';
+                }, 150);
+            }
+            
+            function nextSkin() {
+                currentSkinIndex = (currentSkinIndex + 1) % skins.length;
+                updateSkin();
+            }
+            
+            function prevSkin() {
+                currentSkinIndex = (currentSkinIndex - 1 + skins.length) % skins.length;
+                updateSkin();
+            }
+            
+            function changeSkin() {
+                // Efecto de rotación y cambio
+                const preview = document.getElementById('skinPreview');
+                preview.style.transform = 'rotate(360deg) scale(1.1)';
+                preview.style.transition = 'all 0.5s ease-in-out';
+                
+                setTimeout(() => {
+                    nextSkin();
+                    preview.style.transform = 'rotate(0deg) scale(1)';
+                }, 250);
+                
+                // Guardar la skin seleccionada en localStorage
+                localStorage.setItem('selectedSkin', currentSkinIndex);
+                
+                // Mostrar mensaje de confirmación
+                showSkinChangeMessage();
+            }
+            
+            function showSkinChangeMessage() {
+                const skin = skins[currentSkinIndex];
+                const message = document.createElement('div');
+                message.className = 'fixed top-4 right-4 bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg z-50 transform transition-all duration-300';
+                message.textContent = `¡Skin ${skin.name} aplicada!`;
+                document.body.appendChild(message);
+                
+                setTimeout(() => {
+                    message.style.transform = 'translateX(100%)';
+                    setTimeout(() => {
+                        document.body.removeChild(message);
+                    }, 300);
+                }, 2000);
+            }
+            
+            // Event listeners
+            if (prevSkinBtn) prevSkinBtn.addEventListener('click', prevSkin);
+            if (nextSkinBtn) nextSkinBtn.addEventListener('click', nextSkin);
+            if (changeSkinBtn) changeSkinBtn.addEventListener('click', changeSkin);
+            
+            // Cargar skin guardada
+            const savedSkin = localStorage.getItem('selectedSkin');
+            if (savedSkin !== null) {
+                currentSkinIndex = parseInt(savedSkin);
+            }
+            
+            // Inicializar con la primera skin
+            updateSkin();
+            
+            // Cambio automático de skins cada 3 segundos
+            setInterval(() => {
+                nextSkin();
+            }, 3000);
+            
+            // Agregar estilos CSS para transiciones
+            const style = document.createElement('style');
+            style.textContent = `
+                #currentSkin {
+                    transition: opacity 0.3s ease-in-out;
+                }
+                #skinPreview {
+                    transition: transform 0.5s ease-in-out;
+                }
+            `;
+            document.head.appendChild(style);
+        }
+
+        function initializeCustomizeCanvas() {
+            const canvas = document.getElementById('customize-canvas');
+            if (canvas) {
+                const ctx = canvas.getContext('2d');
+                
+                // Dibujar un círculo de muestra
+                function drawSampleCell() {
+                    ctx.clearRect(0, 0, 96, 96);
+                    
+                    // Círculo principal
+                    ctx.beginPath();
+                    ctx.arc(48, 48, 35, 0, 2 * Math.PI);
+                    ctx.fillStyle = '#3b82f6';
+                    ctx.fill();
+                    ctx.strokeStyle = '#1e40af';
+                    ctx.lineWidth = 3;
+                    ctx.stroke();
+                    
+                    // Texto en el centro
+                    ctx.fillStyle = 'white';
+                    ctx.font = '12px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('YOU', 48, 52);
+                }
+                
+                drawSampleCell();
+            }
+        }
+
+        // Función para mostrar el área de juego
+        function showGameArea() {
+            const mainSection = document.getElementById('mainGameSection');
+            const gameArea = document.getElementById('gameAreaWrapper');
+            
+            if (mainSection && gameArea) {
+                mainSection.style.display = 'none';
+                gameArea.classList.add('active');
+            }
+        }
+
+        // Función para mostrar el menú principal
+        function showMainMenu() {
+            const mainSection = document.getElementById('mainGameSection');
+            const gameArea = document.getElementById('gameAreaWrapper');
+            
+            if (mainSection && gameArea) {
+                mainSection.style.display = 'block';
+                gameArea.classList.remove('active');
+            }
+        }
+
+        // Hacer las funciones globales para compatibilidad
+        window.showGameArea = showGameArea;
+        window.showMainMenu = showMainMenu;
+    </script>
+</body>
+</html>
