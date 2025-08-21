@@ -152,3 +152,4 @@ echo "   sudo systemctl status nginx   # Ver estado de Nginx"
 echo "   sqlite3 src/server/db/db.sqlite3 '.tables'  # Ver tablas de la BD"
 
 
+

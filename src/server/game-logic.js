@@ -16,6 +16,20 @@ const adjustForBoundaries = (position, radius, borderOffset, gameWidth, gameHeig
     }
 };
 
+const adjustForRedZone = (cell, redZone) => {
+    if (!redZone || !redZone.radius) return;
+    
+    const distanceFromCenter = Math.sqrt((cell.x - redZone.centerX) ** 2 + (cell.y - redZone.centerY) ** 2);
+    const maxSafeDistance = redZone.radius - cell.radius;
+    
+    if (distanceFromCenter > maxSafeDistance) {
+        // Cell is trying to move into red zone, push it back
+        const angle = Math.atan2(cell.y - redZone.centerY, cell.x - redZone.centerX);
+        cell.x = redZone.centerX + Math.cos(angle) * maxSafeDistance;
+        cell.y = redZone.centerY + Math.sin(angle) * maxSafeDistance;
+    }
+};
+
 // Lógica de la zona roja dinámica
 class RedZone {
     constructor(config) {
@@ -117,5 +131,6 @@ class RedZone {
 
 module.exports = {
     adjustForBoundaries,
+    adjustForRedZone,
     RedZone
 };

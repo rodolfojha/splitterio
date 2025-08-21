@@ -22,52 +22,68 @@ passport.deserializeUser(async (id, done) => {
     }
 });
 
-// Configurar estrategia de Google OAuth
-passport.use(new GoogleStrategy({
-    clientID: authConfig.google.clientID,
-    clientSecret: authConfig.google.clientSecret,
-    callbackURL: authConfig.google.callbackURL
-}, async (accessToken, refreshToken, profile, done) => {
-    try {
-        console.log('[GOOGLE_AUTH] Perfil recibido:', {
-            id: profile.id,
-            displayName: profile.displayName,
-            email: profile.emails[0].value,
-            provider: profile.provider
-        });
+// Configurar estrategia de Google OAuth solo si las credenciales están disponibles
+console.log('[PASSPORT] Verificando credenciales de Google OAuth...');
+console.log('[PASSPORT] clientID:', authConfig.google.clientID ? 'SET' : 'NOT SET');
+console.log('[PASSPORT] clientSecret:', authConfig.google.clientSecret ? 'SET' : 'NOT SET');
 
-        // Buscar usuario existente por Google ID
-        let user = await authRepository.getUserByGoogleId(profile.id);
-        
-        if (!user) {
-            // Buscar por email
-            user = await authRepository.getUserByEmail(profile.emails[0].value);
+if (authConfig.google.clientID && authConfig.google.clientSecret) {
+    console.log('[PASSPORT] Configurando Google OAuth con credenciales disponibles');
+    
+    passport.use(new GoogleStrategy({
+        clientID: authConfig.google.clientID,
+        clientSecret: authConfig.google.clientSecret,
+        callbackURL: authConfig.google.callbackURL
+    }, async (accessToken, refreshToken, profile, done) => {
+        try {
+            console.log('[GOOGLE_AUTH] Perfil recibido:', {
+                id: profile.id,
+                displayName: profile.displayName,
+                email: profile.emails[0].value,
+                provider: profile.provider
+            });
+
+            // Buscar usuario existente por Google ID
+            let user = await authRepository.getUserByGoogleId(profile.id);
             
-            if (user) {
-                // Usuario existe pero no tiene Google ID, actualizarlo
-                await authRepository.updateUserGoogleId(user.id, profile.id);
-                console.log('[GOOGLE_AUTH] Usuario existente vinculado con Google ID');
-            } else {
-                // Crear nuevo usuario
-                const userData = {
-                    googleId: profile.id,
-                    email: profile.emails[0].value,
-                    username: profile.displayName || profile.emails[0].value.split('@')[0],
-                    displayName: profile.displayName,
-                    avatar: profile.photos && profile.photos[0] ? profile.photos[0].value : null,
-                    balance: 100.00 // Balance inicial
-                };
+            if (!user) {
+                // Buscar por email
+                user = await authRepository.getUserByEmail(profile.emails[0].value);
                 
-                user = await authRepository.createGoogleUser(userData);
-                console.log('[GOOGLE_AUTH] Nuevo usuario creado:', user.username);
+                if (user) {
+                    // Usuario existe pero no tiene Google ID, actualizarlo
+                    await authRepository.updateUserGoogleId(user.id, profile.id);
+                    console.log('[GOOGLE_AUTH] Usuario existente vinculado con Google ID');
+                } else {
+                    // Crear nuevo usuario
+                    const userData = {
+                        googleId: profile.id,
+                        email: profile.emails[0].value,
+                        username: profile.displayName || profile.emails[0].value.split('@')[0],
+                        displayName: profile.displayName,
+                        avatar: profile.photos && profile.photos[0] ? profile.photos[0].value : null,
+                        balance: 100.00 // Balance inicial
+                    };
+                    
+                    user = await authRepository.createGoogleUser(userData);
+                    console.log('[GOOGLE_AUTH] Nuevo usuario creado:', user.username);
+                }
             }
+
+            return done(null, user);
+        } catch (error) {
+            console.error('[GOOGLE_AUTH] Error en estrategia de Google:', error);
+            return done(error, null);
         }
+    }));
+    
+    console.log('[PASSPORT] Estrategia de Google OAuth registrada exitosamente');
+} else {
+    console.log('[PASSPORT] Google OAuth no configurado - credenciales no disponibles');
+    console.log('[PASSPORT] Para habilitar Google OAuth, configura las variables de entorno:');
+    console.log('[PASSPORT] - GOOGLE_CLIENT_ID');
+    console.log('[PASSPORT] - GOOGLE_CLIENT_SECRET');
+}
 
-        return done(null, user);
-    } catch (error) {
-        console.error('[GOOGLE_AUTH] Error en estrategia de Google:', error);
-        return done(error, null);
-    }
-}));
-
+console.log('[PASSPORT] Estrategias registradas:', Object.keys(passport._strategies));
 module.exports = passport;

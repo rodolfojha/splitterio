@@ -40,6 +40,34 @@ exports.randomPosition = function (radius) {
     };
 };
 
+// generate a random position within the safe zone (inside red zone circle)
+exports.randomSafePosition = function (radius, redZone) {
+    if (!redZone || !redZone.radius) {
+        // Fallback to normal random position if no red zone
+        return exports.randomPosition(radius);
+    }
+    
+    // Calculate the maximum safe radius (red zone radius minus player radius)
+    const maxSafeRadius = redZone.radius - radius;
+    
+    if (maxSafeRadius <= 0) {
+        // If safe zone is too small, spawn at center
+        return {
+            x: redZone.centerX,
+            y: redZone.centerY
+        };
+    }
+    
+    // Generate random angle and distance within safe zone
+    const angle = Math.random() * 2 * Math.PI;
+    const distance = Math.random() * maxSafeRadius;
+    
+    return {
+        x: redZone.centerX + Math.cos(angle) * distance,
+        y: redZone.centerY + Math.sin(angle) * distance
+    };
+};
+
 exports.uniformPosition = function (points, radius) {
     var bestCandidate, maxDistance = 0;
     var numberOfCandidates = 10;
@@ -66,6 +94,38 @@ exports.uniformPosition = function (points, radius) {
             maxDistance = minDistance;
         } else {
             return exports.randomPosition(radius);
+        }
+    }
+
+    return bestCandidate;
+};
+
+exports.uniformSafePosition = function (points, radius, redZone) {
+    var bestCandidate, maxDistance = 0;
+    var numberOfCandidates = 10;
+
+    if (points.length === 0) {
+        return exports.randomSafePosition(radius, redZone);
+    }
+
+    // Generate the candidates
+    for (var ci = 0; ci < numberOfCandidates; ci++) {
+        var minDistance = Infinity;
+        var candidate = exports.randomSafePosition(radius, redZone);
+        candidate.radius = radius;
+
+        for (var pi = 0; pi < points.length; pi++) {
+            var distance = exports.getDistance(candidate, points[pi]);
+            if (distance < minDistance) {
+                minDistance = distance;
+            }
+        }
+
+        if (minDistance > maxDistance) {
+            bestCandidate = candidate;
+            maxDistance = minDistance;
+        } else {
+            return exports.randomSafePosition(radius, redZone);
         }
     }
 

@@ -1,7 +1,13 @@
 const util = require("./util");
 
-function getPosition(isUniform, radius, uniformPositions) {
-    return isUniform ? util.uniformPosition(uniformPositions, radius) : util.randomPosition(radius);
+function getPosition(isUniform, radius, uniformPositions, redZone = null) {
+    if (redZone && redZone.radius) {
+        // Use safe positioning when red zone is available
+        return isUniform ? util.uniformSafePosition(uniformPositions, radius, redZone) : util.randomSafePosition(radius, redZone);
+    } else {
+        // Fallback to original positioning when no red zone
+        return isUniform ? util.uniformPosition(uniformPositions, radius) : util.randomPosition(radius);
+    }
 }
 
 function isVisibleEntity(entity, player, addThreshold = true) {

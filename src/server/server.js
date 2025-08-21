@@ -1,6 +1,9 @@
 /*jslint bitwise: true, node: true */
 'use strict';
 
+// Cargar variables de entorno desde .env
+require('dotenv').config();
+
 const express = require('express');
 const session = require('express-session');
 const passport = require('passport');
@@ -81,6 +84,9 @@ app.post('/api/logout', async (req, res) => {
         res.status(400).json({ error: error.message });
     }
 });
+
+// Verificar configuración de Passport antes de definir rutas
+console.log('[SERVER] Verificando estrategias de Passport antes de definir rutas:', Object.keys(passport._strategies));
 
 // Rutas de Google OAuth
 app.get('/auth/google', passport.authenticate('google', { 
@@ -493,7 +499,7 @@ io.on('connection', function (socket) {
 
 function generateSpawnpoint() {
     let radius = util.massToRadius(config.defaultPlayerMass);
-    return getPosition(config.newPlayerInitialPosition === 'farthest', radius, map.players.data)
+    return getPosition(config.newPlayerInitialPosition === 'farthest', radius, map.players.data, redZone)
 }
 
 
@@ -539,6 +545,12 @@ const addPlayer = (socket) => {
             currentPlayer.clientProvidedData(clientPlayerData);
             
             map.players.pushNew(currentPlayer);
+            
+            // Enviar notificación de escudo protector al jugador
+            socket.emit('shieldActivated', {
+                duration: 15,
+                message: '¡Escudo protector activado por 15 segundos!'
+            });
             
             io.emit('playerJoin', { name: currentPlayer.name });
             console.log(`[BET] Player ${currentPlayer.name} joined with $${playerBetAmount}`);
@@ -714,7 +726,7 @@ const tickPlayer = (currentPlayer) => {
 
     // Aplicar multiplicador de velocidad global si el evento está activo
     const globalSpeedMultiplier = speedEventActive ? config.globalEvents.speedEvent.speedMultiplier : 1.0;
-    currentPlayer.move(config.slowBase, config.gameWidth, config.gameHeight, INIT_MASS_LOG, globalSpeedMultiplier);
+    currentPlayer.move(config.slowBase, config.gameWidth, config.gameHeight, INIT_MASS_LOG, globalSpeedMultiplier, redZone);
     
     // Aplicar daño de la zona roja (solo si está habilitada)
     if (config.redZone.enabled) {

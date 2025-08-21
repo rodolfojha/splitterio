@@ -2,7 +2,7 @@
 
 const util = require('../lib/util');
 const sat = require('sat');
-const { adjustForBoundaries } = require('../game-logic');
+const { adjustForBoundaries, adjustForRedZone } = require('../game-logic');
 
 const MIN_SPEED = 6.25;
 const SPLIT_CELL_SPEED = 20;
@@ -232,6 +232,12 @@ exports.Player = class {
         } else {
             console.log(`[CELL_INIT] No hay dinero para asignar a la célula`);
         }
+        
+        // Activar escudo protector inicial de 15 segundos para todas las células
+        for (let cell of this.cells) {
+            cell.activateProtection(15000); // 15 segundos
+        }
+        console.log(`[INITIAL_SHIELD] ${this.name || 'Jugador'} recibió escudo protector de 15 segundos`);
     }
 
     clientProvidedData(playerData) {
@@ -595,7 +601,7 @@ exports.Player = class {
         });
     }
 
-    move(slowBase, gameWidth, gameHeight, initMassLog, globalSpeedMultiplier = 1.0) {
+    move(slowBase, gameWidth, gameHeight, initMassLog, globalSpeedMultiplier = 1.0, redZone = null) {
         if (this.cells.length > 1) {
             if (this.timeToMerge < Date.now()) {
                 this.mergeCollidingCells();
@@ -609,6 +615,11 @@ exports.Player = class {
             let cell = this.cells[i];
             cell.move(this.x, this.y, this.target, slowBase, initMassLog, globalSpeedMultiplier);
             adjustForBoundaries(cell, cell.radius/3, 0, gameWidth, gameHeight);
+            
+            // Prevent cell from moving into red zone
+            if (redZone && redZone.radius) {
+                adjustForRedZone(cell, redZone);
+            }
 
             xSum += cell.x;
             ySum += cell.y;

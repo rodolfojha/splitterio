@@ -922,6 +922,17 @@ function setupSocket(socket) {
         window.chat.addSystemLine('{GAME} - <b>' + (isUnnamedCell(data.name) ? 'An unnamed cell' : data.name) + '</b> joined.');
     });
 
+    // Handle shield activation notification
+    socket.on('shieldActivated', (data) => {
+        console.log('[SHIELD] Escudo protector activado:', data);
+        
+        // Mostrar notificación en el chat
+        window.chat.addSystemLine('{SHIELD} <b>' + data.message + '</b>');
+        
+        // Mostrar notificación visual temporal
+        showShieldNotification(data.message, data.duration);
+    });
+
     socket.on('leaderboard', (data) => {
         leaderboard = data.leaderboard;
         var status = '<span class="title">Leaderboard</span>';
@@ -2233,3 +2244,62 @@ updateNavAuth = function() {
     updateWalletBalance();
     updateBetInterface();
 };
+
+// Función para mostrar notificación de escudo protector
+function showShieldNotification(message, duration) {
+    // Crear elemento de notificación
+    const notification = document.createElement('div');
+    notification.id = 'shieldNotification';
+    notification.style.cssText = `
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 20px 30px;
+        border-radius: 15px;
+        font-size: 18px;
+        font-weight: bold;
+        text-align: center;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        z-index: 10000;
+        animation: shieldPulse 2s ease-in-out;
+        border: 3px solid #4ade80;
+    `;
+    
+    notification.innerHTML = `
+        <div style="margin-bottom: 10px;">🛡️</div>
+        <div>${message}</div>
+        <div style="font-size: 14px; margin-top: 10px; opacity: 0.9;">Escudo activo por ${duration} segundos</div>
+    `;
+    
+    // Agregar estilos CSS para la animación
+    if (!document.getElementById('shieldStyles')) {
+        const style = document.createElement('style');
+        style.id = 'shieldStyles';
+        style.textContent = `
+            @keyframes shieldPulse {
+                0% { transform: translate(-50%, -50%) scale(0.8); opacity: 0; }
+                50% { transform: translate(-50%, -50%) scale(1.1); opacity: 1; }
+                100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+            }
+        `;
+        document.head.appendChild(style);
+    }
+    
+    // Agregar al DOM
+    document.body.appendChild(notification);
+    
+    // Remover después del tiempo especificado
+    setTimeout(() => {
+        if (notification.parentNode) {
+            notification.style.animation = 'shieldPulse 0.5s ease-in-out reverse';
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.parentNode.removeChild(notification);
+                }
+            }, 500);
+        }
+    }, duration * 1000);
+}
