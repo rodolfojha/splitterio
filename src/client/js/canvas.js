@@ -117,9 +117,14 @@ class Canvas {
 
     gameInput(mouse) {
     	if (!this.directionLock) {
-    		this.parent.target.x = mouse.clientX - this.width / 2;
-    		this.parent.target.y = mouse.clientY - this.height / 2;
+    		this.parent.target.x = mouse.clientX - this.parent.cv.width / 2;
+    		this.parent.target.y = mouse.clientY - this.parent.cv.height / 2;
             global.target = this.parent.target;
+            
+            // Debug: verificar que el mouse esté funcionando
+            if (!global.debugLogsDisabled) {
+                console.log('[MOUSE] Target actualizado:', this.parent.target.x, this.parent.target.y);
+            }
     	}
     }
 
@@ -127,8 +132,8 @@ class Canvas {
         touch.preventDefault();
         touch.stopPropagation();
     	if (!this.directionLock) {
-    		this.parent.target.x = touch.touches[0].clientX - this.width / 2;
-    		this.parent.target.y = touch.touches[0].clientY - this.height / 2;
+    		this.parent.target.x = touch.touches[0].clientX - this.parent.cv.width / 2;
+    		this.parent.target.y = touch.touches[0].clientY - this.parent.cv.height / 2;
             global.target = this.parent.target;
     	}
     }

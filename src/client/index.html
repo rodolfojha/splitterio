@@ -13,7 +13,7 @@
     <audio id="split_cell" src="audio/split.mp3"></audio>
     <audio id="spawn_cell" src="audio/spawn.mp3"></audio>
 
-    <!-- CSS Combinado -->
+        <!-- CSS Combinado -->
     <style>
         /* Definimos la animación para el fondo de lava */
         @keyframes slide {
@@ -35,6 +35,11 @@
             top: 0;
             left: 0;
             z-index: -1;
+        }
+
+        /* Ocultar el fondo cuando el juego esté activo */
+        .game-active .background-animated {
+            display: none;
         }
 
         /* Estilos para los canvas */
@@ -69,6 +74,18 @@
         .gamer-btn:hover {
             background-position: right center;
             transform: scale(1.02);
+        }
+        
+        .gamer-btn:disabled {
+            background-image: linear-gradient(to right, #6b7280, #4b5563, #6b7280);
+            cursor: not-allowed;
+            opacity: 0.5;
+            transform: none;
+        }
+        
+        .gamer-btn:disabled:hover {
+            background-position: left center;
+            transform: none;
         }
         
         /* Estilos para los botones de apuestas */
@@ -199,6 +216,36 @@
             border-radius: 50%;
             padding: 10px;
         }
+        
+        .mobile-cashout-btn {
+            width: 120px;
+            height: 50px;
+            margin: 5px;
+            background: linear-gradient(45deg, #f59e0b, #f97316);
+            border: none;
+            border-radius: 25px;
+            color: white;
+            font-weight: bold;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+        }
+        
+        .mobile-cashout-btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.4);
+        }
+        
+        .mobile-cashout-btn:active {
+            transform: scale(0.95);
+        }
+        
+        .mobile-cashout-btn:disabled {
+            background: linear-gradient(45deg, #6b7280, #4b5563);
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
 
         /* Modales */
         .modal {
@@ -309,12 +356,77 @@
             }
         }
         
+        /* Player tracking arrow styles */
+        .player-arrow {
+            position: fixed;
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(45deg, #ff6b6b, #ee5a24);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 16px;
+            font-weight: bold;
+            z-index: 9999;
+            animation: arrowPulse 1.5s ease-in-out infinite;
+            box-shadow: 0 4px 15px rgba(255, 107, 107, 0.7);
+            border: 3px solid #fff;
+            pointer-events: none;
+            transition: all 0.3s ease;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+        }
+        
+        @keyframes arrowPulse {
+            0% { transform: scale(1); opacity: 0.8; }
+            50% { transform: scale(1.1); opacity: 1; }
+            100% { transform: scale(1); opacity: 0.8; }
+        }
+        
+        .combat-alert {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%);
+            color: white;
+            padding: 15px 20px;
+            font-size: 16px;
+            font-weight: bold;
+            text-align: center;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            z-index: 10001;
+            animation: combatAlertSlide 15s ease-in-out;
+            border-bottom: 3px solid #ff4757;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 15px;
+        }
+        
+        @keyframes combatAlertSlide {
+            0% { transform: translateY(-100%); opacity: 0; }
+            20% { transform: translateY(0); opacity: 1; }
+            80% { transform: translateY(0); opacity: 1; }
+            100% { transform: translateY(-100%); opacity: 0; }
+        }
+        
+        .combat-alert .player-name {
+            font-size: 18px;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.3);
+        }
+        
+        .combat-alert .message {
+            font-size: 14px;
+            opacity: 0.9;
+        }
     </style>
 </head>
 <body class="font-sans text-white relative overflow-hidden">
     <!-- Contenedor para el fondo animado -->
     <div class="background-animated"></div>
-
+ 
     <!-- === ÁREA DE JUEGO (oculta por defecto) === -->
     <div id="gameAreaWrapper">
         <!-- Leaderboard -->
@@ -332,6 +444,9 @@
         <div id="mobile">
             <input type="image" id="split" class="split" src="img/split.png" alt="splitBtn">
             <input type="image" id="feed" class="feed" src="img/feed.png" alt="feedBtn">
+            <button id="mobileCashoutBtn" class="mobile-cashout-btn" style="display: none;">
+                💰 CASH OUT
+            </button>
         </div>
         
         <!-- Game controls -->
@@ -823,10 +938,19 @@
         function showGameArea() {
             const mainSection = document.getElementById('mainGameSection');
             const gameArea = document.getElementById('gameAreaWrapper');
+            const mobileCashoutBtn = document.getElementById('mobileCashoutBtn');
             
             if (mainSection && gameArea) {
                 mainSection.style.display = 'none';
                 gameArea.classList.add('active');
+                
+                // Agregar clase para ocultar el fondo cuando el juego esté activo
+                document.body.classList.add('game-active');
+                
+                // Mostrar el botón de cashout móvil cuando se entra al juego
+                if (mobileCashoutBtn) {
+                    mobileCashoutBtn.style.display = 'block';
+                }
             }
         }
 
@@ -834,10 +958,19 @@
         function showMainMenu() {
             const mainSection = document.getElementById('mainGameSection');
             const gameArea = document.getElementById('gameAreaWrapper');
+            const mobileCashoutBtn = document.getElementById('mobileCashoutBtn');
             
             if (mainSection && gameArea) {
                 mainSection.style.display = 'block';
                 gameArea.classList.remove('active');
+                
+                // Remover clase para mostrar el fondo cuando se vuelve al menú
+                document.body.classList.remove('game-active');
+                
+                // Ocultar el botón de cashout móvil cuando se sale del juego
+                if (mobileCashoutBtn) {
+                    mobileCashoutBtn.style.display = 'none';
+                }
             }
         }
 

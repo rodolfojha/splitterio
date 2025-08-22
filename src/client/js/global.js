@@ -38,4 +38,9 @@ module.exports = {
     isCashOutActive: false,
     cashOutStartTime: 0,
     cashOutDuration: 2000, // 2 seconds to complete cash out
+    // Compass system variables
+    showCompass: false, // Desactivada por defecto, solo se activa en combate
+    radarData: [], // Datos de todos los jugadores para el radar
+    debugLogsDisabled: false, // Control para deshabilitar logs de debug
+    combatTarget: null, // Objetivo de combate para la brújula temporal
 };

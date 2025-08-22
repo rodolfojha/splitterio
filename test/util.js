@@ -49,10 +49,14 @@ describe('util.js', () => {
       expect(n5).to.be.true;
     });
 
-    it('should disallow unicode-dependent alphabets', () => {
+    it('should allow unicode-dependent alphabets', () => {
       var n1 = util.validNick('Йèæü');
+      var n2 = util.validNick('Carlos García');
+      var n3 = util.validNick('José María');
 
-      expect(n1).to.be.false;
+      expect(n1).to.be.true;
+      expect(n2).to.be.true;
+      expect(n3).to.be.true;
     });
 
     it('should allow spaces in nicknames', () => {

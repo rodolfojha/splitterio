@@ -510,12 +510,12 @@ const addPlayer = (socket) => {
 
     socket.on('gotit', function (clientPlayerData) {
         console.log('[INFO] Player ' + clientPlayerData.name + ' connecting!');
-        currentPlayer.init(generateSpawnpoint(), config.defaultPlayerMass);
-
+        
         if (map.players.findIndexByID(socket.id) > -1) {
             console.log('[INFO] Player ID is already connected, kicking.');
             socket.disconnect();
         } else if (!util.validNick(clientPlayerData.name)) {
+            console.log(`[VALIDATION_ERROR] Nombre inválido: "${clientPlayerData.name}" - Longitud: ${clientPlayerData.name.length}`);
             socket.emit('kick', 'Invalid username.');
             socket.disconnect();
         } else {
@@ -525,19 +525,21 @@ const addPlayer = (socket) => {
             const sanitizedName = clientPlayerData.name.replace(/(<([^>]+)>)/ig, '');
             clientPlayerData.name = sanitizedName;
 
-            // Guardar información del usuario y apuesta
+            // Guardar información del usuario y apuesta ANTES de inicializar
             playerUserId = clientPlayerData.userId;
             playerUserIds[socket.id] = clientPlayerData.userId; // Guardar en el mapeo global
             playerBetAmount = clientPlayerData.betAmount || 0;
 
-            // Agregar el dinero al jugador
+            // Agregar el dinero al jugador ANTES de inicializar
             currentPlayer.gameMoney = playerBetAmount;
             currentPlayer.originalBetAmount = playerBetAmount; // Guardar apuesta original
             
-            // Asignar el dinero a la primera célula también
+            // AHORA inicializar el jugador con el dinero ya asignado
+            currentPlayer.init(generateSpawnpoint(), config.defaultPlayerMass);
+            
+            // Verificar que el dinero se asignó correctamente a la primera célula
             if (currentPlayer.cells.length > 0) {
-                currentPlayer.cells[0].gameMoney = playerBetAmount;
-                console.log(`[PLAYER_INIT] ${currentPlayer.name} inicializado con $${playerBetAmount} - Apuesta original: $${currentPlayer.originalBetAmount} - Asignado a primera célula`);
+                console.log(`[PLAYER_INIT] ${currentPlayer.name} inicializado con $${playerBetAmount} - Apuesta original: $${currentPlayer.originalBetAmount} - Primera célula tiene $${currentPlayer.cells[0].gameMoney}`);
             } else {
                 console.log(`[PLAYER_INIT] ${currentPlayer.name} inicializado con $${playerBetAmount} - Sin células para asignar`);
             }
@@ -545,12 +547,6 @@ const addPlayer = (socket) => {
             currentPlayer.clientProvidedData(clientPlayerData);
             
             map.players.pushNew(currentPlayer);
-            
-            // Enviar notificación de escudo protector al jugador
-            socket.emit('shieldActivated', {
-                duration: 15,
-                message: '¡Escudo protector activado por 15 segundos!'
-            });
             
             io.emit('playerJoin', { name: currentPlayer.name });
             console.log(`[BET] Player ${currentPlayer.name} joined with $${playerBetAmount}`);
@@ -576,6 +572,8 @@ const addPlayer = (socket) => {
         });
         console.log('[INFO] User ' + currentPlayer.name + ' has respawned');
     });
+
+
 
     socket.on('disconnect', () => {
         // Limpiar el mapeo de userId cuando el jugador se desconecta
@@ -794,21 +792,7 @@ const tickPlayer = (currentPlayer) => {
         const eatenVirusIndexes = util.getIndexes(map.viruses.data, virus => canEatVirus(currentCell, cellCircle, virus));
         const eatenPowerFoodIndexes = util.getIndexes(map.powerFood.data, powerFood => isEntityInsideCircle(powerFood, cellCircle));
 
-        // Debug: verificar si hay virus cerca
-        if (map.viruses.data.length > 0) {
-            const nearbyViruses = map.viruses.data.filter(virus => {
-                const distance = Math.hypot(currentCell.x - virus.x, currentCell.y - virus.y);
-                return distance < (currentCell.radius + virus.radius + 50); // 50px de margen
-            });
-            if (nearbyViruses.length > 0) {
-                console.log(`[VIRUS_DEBUG] ${currentPlayer.name} - Célula ${cellIndex} cerca de ${nearbyViruses.length} virus`);
-                nearbyViruses.forEach(virus => {
-                    const distance = Math.hypot(currentCell.x - virus.x, currentCell.y - virus.y);
-                    const canTrigger = currentCell.mass > virus.mass ? "SÍ puede dividirse" : "NO puede dividirse";
-                    console.log(`[VIRUS_DEBUG] Virus en (${virus.x.toFixed(0)}, ${virus.y.toFixed(0)}) - Distancia: ${distance.toFixed(0)} - Masa virus: ${virus.mass} - Masa célula: ${currentCell.mass} - ${canTrigger}`);
-                });
-            }
-        }
+
 
         if (eatenVirusIndexes.length > 0) {
             console.log(`[VIRUS_DETECTION] ${currentPlayer.name} - Célula ${cellIndex} (masa: ${currentCell.mass}) chocó con virus`);
@@ -924,191 +908,82 @@ const tickGame = () => {
             return; // No hacer nada si tiene escudo
         }
 
-        // Transferir dinero basado en la apuesta original (25% del monto inicial)
-        const originalBet = eatenPlayer.originalBetAmount || 0;
-        if (originalBet > 0) {
-            // Verificar cuánto dinero ya se ha perdido y cuánto queda disponible para ganar
-            const alreadyLost = eatenPlayer.moneyLostToOthers || 0;
-            const maxAvailableToGain = originalBet - alreadyLost;
+        // NUEVA LÓGICA: La célula que come se divide en 4 partes
+        const eaterCell = map.players.getCell(eater.playerIndex, eater.cellIndex);
+        console.log(`[COMBAT_DIVISION] ${eaterPlayer.name} se come a ${eatenPlayer.name} - dividiendo célula que come en 4 partes`);
+        
+        // Dividir la célula que come en 4 partes
+        eaterPlayer.splitCell(eater.cellIndex, 4, config.defaultPlayerMass);
+        
+        // Notificar al jugador que come sobre la división
+        if (sockets[eaterPlayer.id]) {
+            const cellsData = eaterPlayer.cells.map((cell, index) => ({
+                index: index,
+                x: cell.x,
+                y: cell.y,
+                mass: cell.mass,
+                radius: cell.radius,
+                gameMoney: cell.gameMoney || 0
+            }));
             
-            // Calcular 25% de la apuesta original, pero limitado a lo que realmente queda disponible
-            const idealGain = Math.round(originalBet * 0.25 * 100) / 100;
-            const actualGain = Math.min(idealGain, maxAvailableToGain);
-            
-            if (actualGain > 0) {
-                // Asignar el dinero ganado a la primera célula del jugador que come
-                if (eaterPlayer.cells.length > 0) {
-                    if (!eaterPlayer.cells[0].gameMoney) {
-                        eaterPlayer.cells[0].gameMoney = 0;
-                    }
-                    eaterPlayer.cells[0].gameMoney += actualGain;
-                }
-                
-                // Actualizar el registro de dinero perdido por el jugador comido
-                eatenPlayer.moneyLostToOthers = (eatenPlayer.moneyLostToOthers || 0) + actualGain;
-                
-                console.log(`[BET] ${eaterPlayer.name} ate ${eatenPlayer.name} and gained $${actualGain}`);
-                console.log(`[BET] ${eatenPlayer.name} total lost to others: $${eatenPlayer.moneyLostToOthers}/$${originalBet}`);
-                
-                // El jugador comido pierde el dinero ganado por el eater
-                const totalPlayerMoney = eatenPlayer.getTotalMoney();
-                const moneyLost = Math.min(actualGain, totalPlayerMoney); // No puede perder más de lo que tiene
-                const remainingMoney = Math.max(0, totalPlayerMoney - moneyLost);
-                
-                // NUEVA LÓGICA: Si la célula comida ya fue dividida, su valor específico se pierde
-                if (cellGotEaten.hasBeenSplit) {
-                    console.log(`[BET] Célula dividida comida - valor específico perdido: $${cellGotEaten.gameMoney}`);
-                    cellGotEaten.gameMoney = 0; // La célula dividida pierde su valor específico
-                    
-                    // ACTIVAR PROTECCIÓN EN LAS OTRAS CÉLULAS DEL JUGADOR
-                    console.log(`[PROTECTION] Activando protección de 15 segundos en todas las células de ${eatenPlayer.name}`);
-                    for (let cell of eatenPlayer.cells) {
-                        if (cell !== cellGotEaten) { // No proteger la célula que fue comida
-                            cell.activateProtection(15000); // 15 segundos de protección
-                        }
-                    }
-                } else {
-                    // Asignar el dinero restante a la célula que será dividida
-                    cellGotEaten.gameMoney = remainingMoney;
-                }
-                console.log(`[BET] ${eatenPlayer.name} lost $${moneyLost}, remaining total money: $${remainingMoney}`);
-                
-                // Notificar al jugador que ganó dinero
-                if (sockets[eaterPlayer.id]) {
-                    sockets[eaterPlayer.id].emit('moneyGained', { amount: actualGain });
-                }
-                
-                // Notificar al jugador que perdió dinero
-                if (sockets[eatenPlayer.id]) {
-                    sockets[eatenPlayer.id].emit('moneyLost', { amount: moneyLost });
-                }
-            } else {
-                console.log(`[BET] ${eaterPlayer.name} ate ${eatenPlayer.name} but no money gained - player already lost all $${originalBet}`);
-                // El jugador comido aún pierde masa pero no dinero
-                if (cellGotEaten.hasBeenSplit) {
-                    console.log(`[BET] Célula dividida comida sin ganancia - valor específico perdido: $${cellGotEaten.gameMoney}`);
-                    cellGotEaten.gameMoney = 0; // La célula dividida pierde su valor específico
-                    
-                    // ACTIVAR PROTECCIÓN EN LAS OTRAS CÉLULAS DEL JUGADOR
-                    console.log(`[PROTECTION] Activando protección de 15 segundos en todas las células de ${eatenPlayer.name} (sin ganancia)`);
-                    for (let cell of eatenPlayer.cells) {
-                        if (cell !== cellGotEaten) { // No proteger la célula que fue comida
-                            cell.activateProtection(15000); // 15 segundos de protección
-                        }
-                    }
-                } else {
-                    cellGotEaten.gameMoney = eatenPlayer.getTotalMoney();
-                }
-            }
+            sockets[eaterPlayer.id].emit('combatDivision', {
+                cells: cellsData,
+                totalMoney: eaterPlayer.getTotalMoney(),
+                message: `¡Comiste a ${eatenPlayer.name}! Tu célula se dividió en 4 partes.`
+            });
         }
 
+        // NUEVA LÓGICA: Solo transferir todo el dinero al final, sin cálculos intermedios
+        console.log(`[COMBAT_MONEY] ${eaterPlayer.name} se come a ${eatenPlayer.name} - transferencia completa de dinero al final`);
+
+        // Transferir toda la masa de la célula comida a la célula que come
         eaterPlayer.changeCellMass(eater.cellIndex, cellGotEaten.mass);
 
-        // DEBUG: Mostrar el estado de todas las células antes de verificar GAME OVER
-        console.log(`[DEBUG] Estado de células de ${eatenPlayer.name} antes de verificar GAME OVER:`);
-        for (let i = 0; i < eatenPlayer.cells.length; i++) {
-            const cell = eatenPlayer.cells[i];
-            console.log(`[DEBUG] Célula ${i}: $${cell.gameMoney || 0} (dividida: ${cell.hasBeenSplit})`);
-        }
-
-        // Verificar si el jugador se quedó sin dinero (GAME OVER)
-        const finalPlayerMoney = eatenPlayer.getTotalMoney();
-        console.log(`[DEBUG] Dinero total calculado: $${finalPlayerMoney}`);
+        // NUEVO SISTEMA: GAME OVER inmediato para el jugador comido
+        console.log(`[COMBAT_GAME_OVER] ${eatenPlayer.name} fue comido - GAME OVER inmediato`);
         
-        // NUEVA LÓGICA: Verificar si el jugador tiene dinero real (no solo células divididas con $0)
-        let hasRealMoney = false;
-        let totalRealMoney = 0;
-        
-        for (let cell of eatenPlayer.cells) {
-            if (cell.gameMoney > 0) {
-                hasRealMoney = true;
-                totalRealMoney += cell.gameMoney;
-            }
-        }
-        
-        console.log(`[DEBUG] Tiene dinero real: ${hasRealMoney}, dinero real total: $${totalRealMoney}`);
-        
-        // GAME OVER solo si no tiene dinero real O si el dinero real es menor a $0.05
-        if (!hasRealMoney || totalRealMoney < 0.05) {
-            // GAME OVER - El jugador perdió todo su dinero
-            console.log(`[GAME_OVER] ${eatenPlayer.name} se quedó sin dinero ($${finalPlayerMoney}) - GAME OVER`);
-            
-            // Devolver cualquier dinero restante al balance del usuario
-            if (finalPlayerMoney > 0) {
-                const eatenPlayerUserId = playerUserIds[eatenPlayer.id];
-                
-                if (eatenPlayerUserId) {
-                    try {
-                        const newBalance = await authRepository.addWinnings(eatenPlayerUserId, finalPlayerMoney);
-                        console.log(`[GAME_OVER] Devueltos $${finalPlayerMoney} al balance de ${eatenPlayer.name}. Nuevo balance: $${newBalance}`);
-                    } catch (error) {
-                        console.error(`[GAME_OVER] Error devolviendo dinero a ${eatenPlayer.name}:`, error);
-                    }
-                } else {
-                    console.log(`[GAME_OVER] No se pudo encontrar userId para ${eatenPlayer.name} (${eatenPlayer.id})`);
+        // Transferir todo el dinero restante del jugador comido al jugador que come
+        const remainingMoney = eatenPlayer.getTotalMoney();
+        if (remainingMoney > 0) {
+            // Asignar todo el dinero a la primera célula del jugador que come
+            if (eaterPlayer.cells.length > 0) {
+                if (!eaterPlayer.cells[0].gameMoney) {
+                    eaterPlayer.cells[0].gameMoney = 0;
                 }
+                eaterPlayer.cells[0].gameMoney += remainingMoney;
+                console.log(`[COMBAT_MONEY] ${eaterPlayer.name} recibió $${remainingMoney} completo de ${eatenPlayer.name}`);
             }
-            
-            // Notificar al jugador que perdió
-            if (sockets[eatenPlayer.id]) {
-                sockets[eatenPlayer.id].emit('gameOver', {
-                    message: '¡Perdiste! Te quedaste sin dinero. Regresando al lobby...',
-                    finalMoney: finalPlayerMoney
-                });
-            }
-            
-            // Notificar a todos los jugadores
-            io.emit('playerDied', { name: eatenPlayer.name });
-            
-            // Limpiar el mapeo de userId
-            if (playerUserIds[eatenPlayer.id]) {
-                delete playerUserIds[eatenPlayer.id];
-            }
-            
-            // Remover al jugador del juego
-            map.players.removePlayerByIndex(gotEaten.playerIndex);
-            return; // Salir de la función sin dividir al jugador
         }
-
-        // NUEVO SISTEMA: Dividir el jugador comido en lugar de eliminarlo
-        const playerSurvived = eatenPlayer.splitWhenEaten(gotEaten.cellIndex, config.defaultPlayerMass);
         
-        if (playerSurvived) {
-            // El jugador sobrevivió, notificar al cliente
-            console.log(`[SURVIVAL] ${eatenPlayer.name} sobrevivió siendo dividido en 4 partes`);
-            
-            if (sockets[eatenPlayer.id]) {
-                // Enviar información de las nuevas células con protección
-                const cellsData = eatenPlayer.cells.map((cell, index) => ({
-                    index: index,
-                    x: cell.x,
-                    y: cell.y,
-                    mass: cell.mass,
-                    radius: cell.radius,
-                    gameMoney: cell.gameMoney || 0,
-                    isProtected: cell.isCurrentlyProtected(),
-                    protectionTimeLeft: cell.getProtectionTimeLeft()
-                }));
-                
-                sockets[eatenPlayer.id].emit('playerSurvived', {
-                    cells: cellsData,
-                    totalMoney: eatenPlayer.getTotalMoney(),
-                    message: '¡Sobreviviste! Tienes 15 segundos de protección para escapar.'
-                });
-            }
-            
-            // Notificar a todos los jugadores
-            io.emit('playerSurvived', { 
-                name: eatenPlayer.name,
-                message: `${eatenPlayer.name} sobrevivió siendo dividido en 4 partes!`
+        // GAME OVER para el jugador comido
+        if (sockets[eatenPlayer.id]) {
+            sockets[eatenPlayer.id].emit('gameOver', {
+                message: '¡Perdiste! Fuiste comido por otro jugador.',
+                finalMoney: remainingMoney
             });
-        } else {
-            // El jugador murió completamente
-            let playerGotEaten = map.players.data[gotEaten.playerIndex];
-            io.emit('playerDied', { name: playerGotEaten.name });
-            sockets[playerGotEaten.id].emit('RIP');
-            map.players.removePlayerByIndex(gotEaten.playerIndex);
         }
+        
+        // Notificar a todos los jugadores
+        io.emit('playerDied', { name: eatenPlayer.name });
+        
+        // Limpiar el mapeo de userId
+        if (playerUserIds[eatenPlayer.id]) {
+            delete playerUserIds[eatenPlayer.id];
+        }
+        
+        // Remover al jugador del juego
+        map.players.removePlayerByIndex(gotEaten.playerIndex);
+        
+        // ALERTA GLOBAL: Notificar a todos los jugadores sobre el combate
+        // Enviar solo el ID del jugador para seguimiento en tiempo real
+        io.emit('combatAlert', {
+            eaterName: eaterPlayer.name,
+            eatenName: eatenPlayer.name,
+            eaterId: eaterPlayer.id, // ID del jugador para seguimiento en tiempo real
+            message: `¡${eaterPlayer.name} se comió a ${eatenPlayer.name} y se dividió en 4 partes!`
+        });
+        
+        console.log(`[COMBAT_ALERT] Alerta global enviada: ${eaterPlayer.name} (ID: ${eaterPlayer.id}) se comió a ${eatenPlayer.name}`);
     });
 
 };
@@ -1152,6 +1027,7 @@ const gameloop = () => {
 };
 
 const sendUpdates = () => {
+    console.log('[SEND_UPDATES] Iniciando envío de actualizaciones...');
     spectators.forEach(updateSpectator);
     map.enumerateWhatPlayersSee(function (playerData, visiblePlayers, visibleFood, visibleMass, visibleViruses, visiblePowerFood) {
         // Obtener bombas visibles si el evento está activo
@@ -1160,7 +1036,43 @@ const sendUpdates = () => {
             visibleBombs = bombManager.getBombs();
         }
         
+        // Debug del servidor para ver qué jugadores se están enviando
+        console.log(`[SERVER_DEBUG] Enviando update a ${playerData.name} - Jugadores visibles: ${visiblePlayers.length}`);
+        
+        // Enviar información de todos los jugadores para el radar (no solo los visibles)
+        const allPlayersData = map.players.data.map(player => {
+            const playerData = {
+                x: player.x,
+                y: player.y,
+                cells: player.cells.map(cell => ({
+                    x: cell.x,
+                    y: cell.y,
+                    mass: cell.mass,
+                    radius: cell.radius,
+                    speed: cell.speed,
+                    gameMoney: cell.gameMoney || 0,
+                    isProtected: cell.isCurrentlyProtected(),
+                    protectionTimeLeft: cell.getProtectionTimeLeft(),
+                    hasShield: cell.hasShield()
+                })),
+                massTotal: Math.round(player.massTotal),
+                hue: player.hue,
+                id: player.id,
+                name: player.name,
+                gameMoney: player.getTotalMoney() || 0
+            };
+            
+            console.log(`[RADAR_SERVER] Jugador ${player.name} en (${player.x}, ${player.y}) con ${player.cells.length} células`);
+            return playerData;
+        });
+        
+        console.log(`[RADAR_SERVER] Enviando datos de ${allPlayersData.length} jugadores a ${playerData.name}`);
+        
         sockets[playerData.id].emit('serverTellPlayerMove', playerData, visiblePlayers, visibleFood, visibleMass, visibleViruses, visiblePowerFood, visibleBombs);
+        
+        // Enviar información de todos los jugadores para el radar
+        console.log(`[RADAR_SERVER] Enviando evento radarData a ${playerData.name}`);
+        sockets[playerData.id].emit('radarData', allPlayersData);
         
         // Enviar información de la zona roja (solo si está habilitada)
         if (config.redZone.enabled) {

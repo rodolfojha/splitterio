@@ -1,4 +1,5 @@
 /*jslint bitwise: true, node: true */
+/* Radar System - Updated: 2024-01-27 */
 'use strict';
 
 var io = require('socket.io-client');
@@ -21,12 +22,8 @@ if (/Android|webOS|iPhone|iPad|iPod|BlackBerry/i.test(navigator.userAgent)) {
 }
 
 function startGame(type) {
-    // Para espectadores o usuarios no autenticados, continuar normalmente
-    if (currentUser && type === 'player') {
-        global.playerName = currentUser.username;
-    } else {
-        global.playerName = playerNameInput.value.replace(/(<([^>]+)>)/ig, '').substring(0, 25);
-    }
+    // Siempre usar el nombre del input, independientemente del tipo de autenticación
+    global.playerName = playerNameInput.value.replace(/(<([^>]+)>)/ig, '').substring(0, 25);
     
     global.playerType = type;
 
@@ -52,6 +49,44 @@ function startGame(type) {
     window.chat.registerFunctions();
     window.canvas.socket = socket;
     global.socket = socket;
+    
+    // Mostrar información sobre la brújula
+    setTimeout(() => {
+        window.chat.addSystemLine(' 🎯 Brújula de detección activada! Presiona H para ayuda');
+    }, 2000);
+    
+    setTimeout(() => {
+        window.chat.addSystemLine(' 📡 Nuevo: Radar de largo alcance! Presiona R para activarlo');
+    }, 4000);
+    
+    setTimeout(() => {
+        window.chat.addSystemLine(' 🎯 Radar de fondo activo! Presiona T para desactivarlo');
+    }, 6000);
+    
+    setTimeout(() => {
+        window.chat.addSystemLine(' 🌍 ¡Nuevo! Brújula detecta células en todo el mapa');
+    }, 8000);
+    
+    // Función de debug para mostrar datos del radar cada 10 segundos
+    setInterval(() => {
+        if (global.debugLogsDisabled) return; // Saltar si los logs están deshabilitados
+        
+        if (global.radarData && global.radarData.length > 0) {
+            console.log('[RADAR_DEBUG] ✅ Radar activo con', global.radarData.length, 'jugadores');
+            // Mostrar información de los primeros 2 jugadores para debug
+            global.radarData.slice(0, 2).forEach((player, index) => {
+                console.log(`[RADAR_DEBUG] Jugador ${index + 1}: ${player.name} en (${player.x}, ${player.y})`);
+            });
+        } else {
+            console.log('[RADAR_DEBUG] ❌ No hay datos del radar');
+        }
+    }, 10000);
+    
+    // Test automático después de 15 segundos
+    setTimeout(() => {
+        console.log('[TEST] 🧪 Ejecutando test automático del sistema de radar...');
+        window.testRadarSystem();
+    }, 15000);
 }
 
 // Hacer startGame disponible globalmente
@@ -122,10 +157,12 @@ function processBet(betAmount) {
 function startGameWithBet(betAmount) {
     console.log(`[BET] Iniciando juego con apuesta de $${betAmount}`);
     
-    global.playerName = currentUser.username;
+    // Usar el nombre del input, no el nombre de Google OAuth
+    global.playerName = playerNameInput.value.replace(/(<([^>]+)>)/ig, '').substring(0, 25);
     global.playerType = 'player';
     global.betAmount = betAmount;
     global.originalBetAmount = betAmount; // Guardar la apuesta original
+    updateMobileCashoutButton();
 
     global.screen.width = window.innerWidth;
     global.screen.height = window.innerHeight;
@@ -154,13 +191,14 @@ function startGameWithBet(betAmount) {
     window.canvas.socket = socket;
     global.socket = socket;
     global.gameStart = Date.now();
+    updateMobileCashoutButton();
 }
 
-// Checks if the nick chosen contains valid alphanumeric characters (and underscores).
+// Checks if the nick chosen contains valid characters (any Unicode character except control characters).
 function validNick() {
-    var regex = /^\w*$/;
+    var regex = /^[^\x00-\x1F\x7F]*$/;
     debug('Regex Test', regex.exec(playerNameInput.value));
-    return regex.exec(playerNameInput.value) !== null;
+    return regex.exec(playerNameInput.value) !== null && playerNameInput.value.length > 0 && playerNameInput.value.length <= 25;
 }
 
 // Variables de autenticacin
@@ -192,8 +230,8 @@ function updateNavAuth() {
         if (navUserBalance) navUserBalance.textContent = currentUser.balance;
         if (userDisplayName) userDisplayName.textContent = currentUser.username;
         
-        // Ocultar el campo de nombre de jugador cuando est autenticado
-        if (playerNameSection) playerNameSection.style.display = 'none';
+        // Mostrar el campo de nombre de jugador incluso cuando est autenticado
+        if (playerNameSection) playerNameSection.style.display = 'block';
         
         console.log('Usuario autenticado, mostrando informacin del usuario:', currentUser.username, 'Balance:', currentUser.balance);
     } else {
@@ -598,8 +636,8 @@ window.onload = function () {
                 // Mostrar opciones de apuesta antes de iniciar el juego
                 showBetOptions();
             } else {
-                // Mostrar mensaje de que debe iniciar sesión
-                alert('Debes iniciar sesión para jugar. Puedes hacer spectate sin cuenta.');
+                // Mostrar modal de login en lugar de alert
+                showLoginModal();
             }
         };
     }
@@ -626,7 +664,8 @@ window.onload = function () {
                 // Mostrar opciones de apuesta antes de iniciar el juego
                 showBetOptions();
             } else {
-                alert('Debes iniciar sesin para jugar. Puedes hacer spectate sin cuenta.');
+                // Mostrar modal de login en lugar de alert
+                showLoginModal();
             }
         }
     });
@@ -662,6 +701,43 @@ window.onload = function () {
         };
     }
 
+    // Event listener para el botón de cashout móvil
+    const mobileCashoutBtn = document.getElementById('mobileCashoutBtn');
+    if (mobileCashoutBtn) {
+        mobileCashoutBtn.addEventListener('touchstart', function(e) {
+            e.preventDefault();
+            if (global.gameStart && global.gameStart > 0 && global.betAmount > 0 && !global.isCashOutActive) {
+                startCashOut();
+            }
+        });
+        
+        mobileCashoutBtn.addEventListener('touchend', function(e) {
+            e.preventDefault();
+            if (global.isCashOutActive) {
+                cancelCashOut();
+            }
+        });
+        
+        // También agregar soporte para mouse en dispositivos híbridos
+        mobileCashoutBtn.addEventListener('mousedown', function(e) {
+            e.preventDefault();
+            if (global.gameStart && global.gameStart > 0 && global.betAmount > 0 && !global.isCashOutActive) {
+                startCashOut();
+            }
+        });
+        
+        mobileCashoutBtn.addEventListener('mouseup', function(e) {
+            e.preventDefault();
+            if (global.isCashOutActive) {
+                cancelCashOut();
+            }
+        });
+    }
+
+    // Asegurar que la interfaz de apuestas esté actualizada al cargar la página
+    setTimeout(() => {
+        updateBetInterface();
+    }, 100);
 
 };
 
@@ -805,6 +881,7 @@ function completeDisconnect() {
     global.cashOutProgress = 0;
     global.isCashOutActive = false;
     global.gameStart = false;
+    updateMobileCashoutButton();
     global.isDisconnecting = false; // Resetear la bandera
     
     // Cerrar socket
@@ -843,6 +920,8 @@ function completeDisconnect() {
 
 // socket stuff.
 function setupSocket(socket) {
+    console.log('[SOCKET] 🔌 Configurando socket...');
+    
     // Handle ping.
     socket.on('pongcheck', function () {
         var latency = Date.now() - global.startPingTime;
@@ -887,6 +966,7 @@ function setupSocket(socket) {
         }
         
         global.gameStart = Date.now();
+        updateMobileCashoutButton();
         window.chat.addSystemLine('Connected to the game!');
         window.chat.addSystemLine('Type <b>-help</b> for a list of commands.');
         
@@ -902,6 +982,17 @@ function setupSocket(socket) {
         global.game.width = gameSizes.width;
         global.game.height = gameSizes.height;
         resize();
+        
+        // Mostrar notificación de escudo protector inicial
+        setTimeout(() => {
+            showShieldNotification('¡Escudo protector activado por 15 segundos!', 15);
+            window.chat.addSystemLine('{SHIELD} <b>¡Escudo protector activado por 15 segundos!</b>');
+        }, 500); // Pequeño delay para asegurar que el juego esté completamente cargado
+        
+        // Procesar flechas pendientes después de que el juego esté completamente inicializado
+        setTimeout(() => {
+            processPendingArrows();
+        }, 2000);
     });
 
 
@@ -916,6 +1007,10 @@ function setupSocket(socket) {
 
     socket.on('playerDisconnect', (data) => {
         window.chat.addSystemLine('{GAME} - <b>' + (isUnnamedCell(data.name) ? 'An unnamed cell' : data.name) + '</b> disconnected.');
+        // Remover flecha del jugador que se desconectó
+        if (data.id) {
+            removePlayerArrow(data.id);
+        }
     });
 
     socket.on('playerJoin', (data) => {
@@ -931,6 +1026,55 @@ function setupSocket(socket) {
         
         // Mostrar notificación visual temporal
         showShieldNotification(data.message, data.duration);
+    });
+
+    // Handle combat division notification
+    socket.on('combatDivision', (data) => {
+        console.log('[COMBAT_DIVISION] División por combate:', data);
+        
+        // Mostrar notificación en el chat
+        window.chat.addSystemLine('{COMBAT} <b>' + data.message + '</b>');
+        
+        // Mostrar notificación visual temporal
+        showCombatNotification(data.message);
+        
+        // Mostrar flecha indicadora hacia la célula dividida
+        if (data.cells && data.cells.length > 0) {
+            updatePlayerArrow('combat-division', 'Célula Dividida', data.cells[0].x, data.cells[0].y);
+        }
+    });
+
+    // Handle global combat alert
+    socket.on('combatAlert', (data) => {
+        console.log('[COMBAT_ALERT] ⚔️ Alerta de combate recibida:', data);
+        
+        // Mostrar alerta global de combate
+        showGlobalCombatAlert(data.eaterName, data.eatenName);
+        
+        // NUEVA FUNCIONALIDAD: Activar brújula automática para todos los jugadores
+        global.showCompass = true;
+        global.combatTarget = {
+            name: data.eaterName,
+            id: data.eaterId, // ID del jugador para seguimiento en tiempo real
+            timestamp: Date.now()
+        };
+        
+        // Mostrar mensaje en el chat
+        window.chat.addSystemLine(` ⚔️ ${data.message}`);
+        console.log('[COMBAT_ALERT] 🎯 Brújula activada para rastrear a', data.eaterName, '(ID:', data.eaterId + ')');
+        
+        // Desactivar la brújula después de 15 segundos (tiempo de unificación de células)
+        setTimeout(() => {
+            global.showCompass = false;
+            global.combatTarget = null;
+            console.log('[COMBAT_ALERT] 🕐 Brújula de combate desactivada automáticamente');
+            window.chat.addSystemLine(' 🕐 Brújula de combate desactivada');
+        }, 15000); // 15 segundos
+        
+        // Mostrar flecha indicadora para todos los jugadores (mantener funcionalidad existente)
+        if (data.eaterPosition) {
+            updatePlayerArrow('combat-eater', 'Jugador Dividido', data.eaterPosition.x, data.eaterPosition.y);
+        }
     });
 
     socket.on('leaderboard', (data) => {
@@ -1009,12 +1153,52 @@ function setupSocket(socket) {
         powerFoods = powerFoodList || [];
         bombs = bombList || [];
         
+        // Actualizar flechas de otros jugadores (sin logs de debug)
+        if (userData && Array.isArray(userData)) {
+            userData.forEach(user => {
+                if (user && user.id !== player.id) {
+                    updatePlayerArrow(user.id, user.name, user.x, user.y);
+                }
+            });
+            
+            // Limpiar flechas de jugadores que ya no están visibles
+            const otherPlayers = userData.filter(u => u.id !== player.id);
+            const currentPlayerIds = otherPlayers.map(u => u.id);
+            const existingArrowIds = Array.from(playerArrows.keys());
+            
+            existingArrowIds.forEach(arrowId => {
+                if (!currentPlayerIds.includes(arrowId)) {
+                    removePlayerArrow(arrowId);
+                }
+            });
+            
+            // Actualizar flechas para cada jugador
+            otherPlayers.forEach(user => {
+                updatePlayerArrow(user.id, user.name, user.x, user.y);
+            });
+        }
+        
 
+    });
+
+    // Handle radar data (todos los jugadores del mapa)
+    socket.on('radarData', function (allPlayersData) {
+        console.log('[RADAR] ✅ EVENTO RADAR RECIBIDO!');
+        console.log('[RADAR] ✅ Recibidos datos de', allPlayersData.length, 'jugadores para el radar');
+        global.radarData = allPlayersData;
+        
+        // Mostrar información básica de cada jugador
+        allPlayersData.forEach(player => {
+            if (player.id !== player.id) { // Excluir al propio jugador
+                console.log(`[RADAR] Jugador ${player.name} en (${player.x}, ${player.y}) con ${player.cells.length} células`);
+            }
+        });
     });
 
     // Death.
     socket.on('RIP', function () {
         global.gameStart = false;
+        updateMobileCashoutButton();
         render.drawErrorMessage('You died!', graph, global.screen);
         
         // Ocultar controles del juego
@@ -1046,6 +1230,7 @@ function setupSocket(socket) {
     // Game Over por quedarse sin dinero
     socket.on('gameOver', function (data) {
         global.gameStart = false;
+        updateMobileCashoutButton();
         render.drawErrorMessage(data.message || 'Perdiste! Te quedaste sin dinero.', graph, global.screen);
         
         // Ocultar controles del juego
@@ -1091,6 +1276,7 @@ function setupSocket(socket) {
 
     socket.on('kick', function (reason) {
         global.gameStart = false;
+        updateMobileCashoutButton();
         global.kicked = true;
         if (reason !== '') {
             render.drawErrorMessage('You were kicked for: ' + reason, graph, global.screen);
@@ -1337,6 +1523,8 @@ function setupSocket(socket) {
         const message = ' Chocaste con una bomba! Te has dividido!';
         window.chat.addSystemLine(message);
     });
+    
+    console.log('[SOCKET] ✅ Configuración de socket completada');
 }
 
 const isUnnamedCell = (name) => name.length < 1;
@@ -1454,6 +1642,27 @@ function gameLoop() {
         });
         render.drawCells(cellsToDraw, playerConfig, global.toggleMassState, borders, graph);
 
+        // Dibujar el radar de fondo (siempre activo)
+        if (global.showBackgroundRadar) {
+            render.drawBackgroundRadar(player, users, global.screen, graph, global);
+        }
+        
+        // Brújula simple de prueba (siempre activa para debug)
+        if (global.testSimpleRadar) {
+            render.drawSimpleRadarCompass(player, global.screen, graph, global);
+        }
+        
+        // Dibujar la brújula que apunta hacia células cercanas
+        if (global.showCompass) {
+            if (global.useRadarCompass) {
+                render.drawRadarCompass(player, users, global.screen, graph, global);
+            } else if (global.useAdvancedCompass) {
+                render.drawAdvancedCompass(player, users, global.screen, graph, global);
+            } else {
+                render.drawCompass(player, users, global.screen, graph, global);
+            }
+        }
+
         // Dibujar barra de progreso del cash out si est activo
         if (global.isCashOutActive) {
             render.drawCashOutProgress(global.cashOutProgress, global.screen, graph);
@@ -1465,12 +1674,66 @@ function gameLoop() {
 
 window.addEventListener('resize', resize);
 
-// Manejo de teclas para cash out
+// Manejo de teclas para cash out y brújula
 window.addEventListener('keydown', function(e) {
     if (e.key === 'c' || e.key === 'C') {
         if (global.gameStart && global.gameStart > 0 && global.betAmount > 0 && !global.isCashOutActive) {
             startCashOut();
         }
+    }
+    
+    // Controles de la brújula
+    if (e.key === 'b' || e.key === 'B') {
+        global.showCompass = !global.showCompass;
+        console.log(`[COMPASS] Brújula ${global.showCompass ? 'activada' : 'desactivada'}`);
+        window.chat.addSystemLine(` Brújula ${global.showCompass ? 'activada' : 'desactivada'}`);
+    }
+    
+    if (e.key === 'v' || e.key === 'V') {
+        global.useAdvancedCompass = !global.useAdvancedCompass;
+        global.useRadarCompass = false; // Desactivar radar al cambiar a avanzada
+        console.log(`[COMPASS] Brújula ${global.useAdvancedCompass ? 'avanzada' : 'simple'} activada`);
+        window.chat.addSystemLine(` Brújula ${global.useAdvancedCompass ? 'avanzada' : 'simple'} activada`);
+    }
+    
+    if (e.key === 'r' || e.key === 'R') {
+        global.useRadarCompass = !global.useRadarCompass;
+        global.useAdvancedCompass = false; // Desactivar avanzada al activar radar
+        console.log(`[COMPASS] Radar ${global.useRadarCompass ? 'activado' : 'desactivado'}`);
+        window.chat.addSystemLine(` Radar ${global.useRadarCompass ? 'activado' : 'desactivado'}`);
+    }
+    
+    if (e.key === 't' || e.key === 'T') {
+        global.showBackgroundRadar = !global.showBackgroundRadar;
+        console.log(`[COMPASS] Radar de fondo ${global.showBackgroundRadar ? 'activado' : 'desactivado'}`);
+        window.chat.addSystemLine(` Radar de fondo ${global.showBackgroundRadar ? 'activado' : 'desactivado'}`);
+    }
+    
+    if (e.key === 'p' || e.key === 'P') {
+        global.testSimpleRadar = !global.testSimpleRadar;
+        console.log(`[COMPASS] Brújula de prueba ${global.testSimpleRadar ? 'activada' : 'desactivada'}`);
+        window.chat.addSystemLine(` Brújula de prueba ${global.testSimpleRadar ? 'activada' : 'desactivada'}`);
+    }
+    
+    // Controles para ajustar el rango del radar
+    if (e.key === '+' || e.key === '=') {
+        if (global.useRadarCompass) {
+            global.radarRange = Math.min(global.radarRange + 1000, 10000);
+            console.log(`[RADAR] Rango aumentado a ${global.radarRange}px`);
+            window.chat.addSystemLine(` Rango del radar: ${global.radarRange/1000}km`);
+        }
+    }
+    
+    if (e.key === '-') {
+        if (global.useRadarCompass) {
+            global.radarRange = Math.max(global.radarRange - 1000, 2000);
+            console.log(`[RADAR] Rango disminuido a ${global.radarRange}px`);
+            window.chat.addSystemLine(` Rango del radar: ${global.radarRange/1000}km`);
+        }
+    }
+    
+    if (e.key === 'h' || e.key === 'H') {
+        showCompassHelp();
     }
 });
 
@@ -1488,6 +1751,7 @@ function startCashOut() {
     global.cashOutProgress = 0;
     console.log('[CASHOUT] Iniciando cash out...');
     window.chat.addSystemLine(' Mantn presionada la tecla C para hacer cash out...');
+    updateMobileCashoutButton();
 }
 
 function cancelCashOut() {
@@ -1495,6 +1759,7 @@ function cancelCashOut() {
     global.cashOutProgress = 0;
     console.log('[CASHOUT] Cash out cancelado');
     window.chat.addSystemLine(' Cash out cancelado');
+    updateMobileCashoutButton();
 }
 
 function updateCashOutProgress() {
@@ -1510,6 +1775,28 @@ function updateCashOutProgress() {
             window.chat.addSystemLine(' Cash out completado! Saliendo del juego...');
             handleDisconnect();
         }
+    }
+    
+    // Actualizar el estado del botón de cashout móvil
+    updateMobileCashoutButton();
+}
+
+function updateMobileCashoutButton() {
+    const mobileCashoutBtn = document.getElementById('mobileCashoutBtn');
+    if (!mobileCashoutBtn) return;
+    
+    // Verificar si el usuario puede hacer cashout
+    const canCashout = global.gameStart && global.gameStart > 0 && global.betAmount > 0 && !global.isCashOutActive;
+    
+    if (canCashout) {
+        mobileCashoutBtn.disabled = false;
+        mobileCashoutBtn.textContent = '💰 CASH OUT';
+    } else if (global.isCashOutActive) {
+        mobileCashoutBtn.disabled = true;
+        mobileCashoutBtn.textContent = '⏳ CASHING OUT...';
+    } else {
+        mobileCashoutBtn.disabled = true;
+        mobileCashoutBtn.textContent = '💰 CASH OUT';
     }
 }
 
@@ -1541,6 +1828,23 @@ function resize() {
 
 // Log de verificacin
 console.log('Script app.js cargado completamente');
+console.log('[TEST] 🧪 Sistema de radar cargado - Versión 2024-01-27');
+
+// Función de test para verificar que el sistema funciona
+window.testRadarSystem = function() {
+    console.log('[TEST] 🧪 Iniciando test del sistema de radar...');
+    console.log('[TEST] global.radarData:', global.radarData);
+    console.log('[TEST] global.showCompass:', global.showCompass);
+    console.log('[TEST] global.testSimpleRadar:', global.testSimpleRadar);
+    
+    if (global.radarData && global.radarData.length > 0) {
+        console.log('[TEST] ✅ Datos del radar disponibles');
+        return true;
+    } else {
+        console.log('[TEST] ❌ No hay datos del radar');
+        return false;
+    }
+};
 
 // Variables globales para el sistema de eventos de velocidad
 let speedEventWarningElement = null;
@@ -2035,11 +2339,11 @@ document.addEventListener('DOMContentLoaded', function() {
             // Validar nombre del jugador
             let playerName = playerNameInput.value.trim();
             
-            // Si el usuario está autenticado con Google y no hay nombre ingresado, usar su nombre de Google
+            // Si no hay nombre ingresado y el usuario está autenticado con Google, usar su nombre como sugerencia
             if (!playerName && currentUser && currentUser.username) {
+                playerNameInput.value = currentUser.username;
                 playerName = currentUser.username;
-                playerNameInput.value = playerName;
-                console.log(`[PLAY] Usando nombre de Google OAuth: ${playerName}`);
+                console.log(`[PLAY] Sugiriendo nombre de Google OAuth: ${playerName}`);
             }
             
             if (!playerName) {
@@ -2047,9 +2351,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 return;
             }
             
-            // Validar caracteres del nombre (más permisivo para usuarios de Google OAuth)
-            if (!/^[a-zA-Z0-9_\s]+$/.test(playerName)) {
-                showNameError('El nombre solo puede contener letras, nmeros, espacios y guiones bajos');
+            // Validar caracteres del nombre (permite letras, números, espacios y algunos caracteres especiales)
+            if (!/^[a-zA-Z0-9_\s\-\.]+$/.test(playerName)) {
+                showNameError('El nombre puede contener letras, números, espacios, guiones y puntos');
                 return;
             }
             
@@ -2086,8 +2390,8 @@ document.addEventListener('DOMContentLoaded', function() {
         playerNameInput.addEventListener('input', function() {
             const playerName = this.value.trim();
             
-            if (playerName && !/^[a-zA-Z0-9_]+$/.test(playerName)) {
-                showNameError('Solo letras, nmeros y guiones bajos');
+            if (playerName && !/^[a-zA-Z0-9_\s\-\.]+$/.test(playerName)) {
+                showNameError('Solo letras, números, espacios, guiones y puntos');
             } else {
                 hideNameError();
             }
@@ -2167,6 +2471,7 @@ function updateBetInterface() {
     console.log('[DEBUG] sessionToken:', sessionToken);
     
     const playButtonText = document.getElementById('playButtonText');
+    const startButton = document.getElementById('startButton');
     const betButtons = document.querySelectorAll('.betButton');
     const betStatus = document.getElementById('betStatus');
     
@@ -2185,6 +2490,13 @@ function updateBetInterface() {
     
     if (isAuthenticated) {
         updateBetStatus(` Balance: $${currentUser.balance.toFixed(2)} - Selecciona tu apuesta`);
+        
+        // Habilitar el botón de PLAY
+        if (startButton) {
+            startButton.disabled = false;
+            startButton.style.opacity = '1';
+            startButton.style.cursor = 'pointer';
+        }
         
         // Habilitar/deshabilitar botones segn el balance
         betButtons.forEach(button => {
@@ -2205,18 +2517,25 @@ function updateBetInterface() {
             if (playButtonText) playButtonText.textContent = ' PLAY (Free)';
         }
     } else {
-        updateBetStatus(' Inicia sesin para apostar, o juega gratis sin apostar');
+        updateBetStatus(' Inicia sesin con Google para jugar');
         window.selectedBetAmount = 0;
+        
+        // Deshabilitar el botón de PLAY
+        if (startButton) {
+            startButton.disabled = true;
+            startButton.style.opacity = '0.5';
+            startButton.style.cursor = 'not-allowed';
+        }
         
         // Deshabilitar todos los botones de apuesta
         betButtons.forEach(btn => {
             btn.classList.remove('selected');
-            btn.disabled = false; // Permitir click para mostrar mensaje
-            btn.style.opacity = '0.8';
+            btn.disabled = true;
+            btn.style.opacity = '0.5';
         });
         
         // Actualizar texto del botn PLAY
-        if (playButtonText) playButtonText.textContent = ' PLAY (Free)';
+        if (playButtonText) playButtonText.textContent = ' PLAY (Login Required)';
     }
 }
 
@@ -2237,13 +2556,22 @@ function updateBetStatus(message) {
     }
 }
 
-// Llamar a updateWalletBalance cuando se actualice el usuario
-const originalUpdateNavAuth = updateNavAuth;
-updateNavAuth = function() {
-    originalUpdateNavAuth();
-    updateWalletBalance();
-    updateBetInterface();
-};
+    // Llamar a updateWalletBalance cuando se actualice el usuario
+    const originalUpdateNavAuth = updateNavAuth;
+    updateNavAuth = function() {
+        originalUpdateNavAuth();
+        updateWalletBalance();
+        updateBetInterface();
+        
+        // Auto-completar nombre del jugador si está autenticado con Google
+        if (currentUser && currentUser.username && playerNameInput) {
+            // Solo auto-completar si el campo está vacío
+            if (!playerNameInput.value.trim()) {
+                playerNameInput.value = currentUser.username;
+                console.log(`[AUTO_FILL] Nombre auto-completado: ${currentUser.username}`);
+            }
+        }
+    };
 
 // Función para mostrar notificación de escudo protector
 function showShieldNotification(message, duration) {
@@ -2252,26 +2580,27 @@ function showShieldNotification(message, duration) {
     notification.id = 'shieldNotification';
     notification.style.cssText = `
         position: fixed;
-        top: 50%;
+        top: 15%;
         left: 50%;
         transform: translate(-50%, -50%);
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         color: white;
-        padding: 20px 30px;
-        border-radius: 15px;
-        font-size: 18px;
+        padding: 12px 20px;
+        border-radius: 10px;
+        font-size: 14px;
         font-weight: bold;
         text-align: center;
-        box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        box-shadow: 0 5px 15px rgba(0,0,0,0.3);
         z-index: 10000;
         animation: shieldPulse 2s ease-in-out;
-        border: 3px solid #4ade80;
+        border: 2px solid #4ade80;
+        max-width: 300px;
     `;
     
     notification.innerHTML = `
-        <div style="margin-bottom: 10px;">🛡️</div>
-        <div>${message}</div>
-        <div style="font-size: 14px; margin-top: 10px; opacity: 0.9;">Escudo activo por ${duration} segundos</div>
+        <div style="margin-bottom: 5px; font-size: 16px;">🛡️</div>
+        <div style="font-size: 13px;">${message}</div>
+        <div style="font-size: 11px; margin-top: 5px; opacity: 0.9;">Escudo activo por ${duration} segundos</div>
     `;
     
     // Agregar estilos CSS para la animación
@@ -2280,8 +2609,8 @@ function showShieldNotification(message, duration) {
         style.id = 'shieldStyles';
         style.textContent = `
             @keyframes shieldPulse {
-                0% { transform: translate(-50%, -50%) scale(0.8); opacity: 0; }
-                50% { transform: translate(-50%, -50%) scale(1.1); opacity: 1; }
+                0% { transform: translate(-50%, -50%) scale(0.9); opacity: 0; }
+                50% { transform: translate(-50%, -50%) scale(1.05); opacity: 1; }
                 100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
             }
         `;
@@ -2303,3 +2632,426 @@ function showShieldNotification(message, duration) {
         }
     }, duration * 1000);
 }
+
+// Función para mostrar notificación de división por combate
+function showCombatNotification(message) {
+    // Crear elemento de notificación
+    const notification = document.createElement('div');
+    notification.id = 'combatNotification';
+    notification.style.cssText = `
+        position: fixed;
+        top: 20%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%);
+        color: white;
+        padding: 12px 20px;
+        border-radius: 10px;
+        font-size: 14px;
+        font-weight: bold;
+        text-align: center;
+        box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        z-index: 10000;
+        animation: combatPulse 2s ease-in-out;
+        border: 2px solid #ff4757;
+        max-width: 300px;
+    `;
+    
+    notification.innerHTML = `
+        <div style="margin-bottom: 5px; font-size: 16px;">⚔️</div>
+        <div style="font-size: 13px;">${message}</div>
+        <div style="font-size: 11px; margin-top: 5px; opacity: 0.9;">¡Tu célula se dividió en 4 partes!</div>
+    `;
+    
+    // Agregar estilos CSS si no existen
+    if (!document.getElementById('combatStyles')) {
+        const style = document.createElement('style');
+        style.id = 'combatStyles';
+        style.textContent = `
+            @keyframes combatPulse {
+                0% { transform: translate(-50%, -50%) scale(0.9); opacity: 0; }
+                50% { transform: translate(-50%, -50%) scale(1.05); opacity: 1; }
+                100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+            }
+        `;
+        document.head.appendChild(style);
+    }
+    
+    // Agregar notificación al DOM
+    document.body.appendChild(notification);
+    
+    // Remover notificación después de 3 segundos
+    setTimeout(() => {
+        if (notification.parentNode) {
+            notification.style.animation = 'combatPulse 0.5s ease-in-out reverse';
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.parentNode.removeChild(notification);
+                }
+            }, 500);
+        }
+    }, 3000);
+}
+
+// Sistema de flechas para seguir jugadores
+let playerArrows = new Map(); // Mapa para almacenar las flechas de cada jugador
+
+// Función para crear o actualizar flecha de jugador
+function updatePlayerArrow(playerId, playerName, playerX, playerY) {
+    console.log('[ARROW_UPDATE] Intentando actualizar flecha para:', playerName, 'en', playerX, playerY);
+    
+    // Verificar si las alertas de combate están habilitadas
+    const showCombatAlerts = document.getElementById('showCombatAlerts');
+    if (showCombatAlerts && !showCombatAlerts.checked) {
+        console.log('[ARROW_UPDATE] Alertas de combate deshabilitadas');
+        return;
+    }
+    
+    // Verificar que las variables del juego estén disponibles
+    // Usar las variables locales en lugar de window.variables
+    if (!player || !global || !global.game) {
+        console.log('[ARROW_UPDATE] Variables del juego no disponibles, guardando datos para más tarde');
+        console.log('[ARROW_UPDATE] Estado de variables:', {
+            player: !!player,
+            global: !!global,
+            game: !!(global && global.game),
+            playerValue: player,
+            globalValue: global
+        });
+        // Guardar los datos para procesarlos más tarde cuando las variables estén disponibles
+        if (!window.pendingArrows) {
+            window.pendingArrows = [];
+        }
+        window.pendingArrows.push({playerId, playerName, playerX, playerY});
+        return;
+    }
+    
+    // No mostrar flecha para el propio jugador
+    if (playerId === player.id) {
+        console.log('[ARROW_UPDATE] Es el propio jugador, no mostrar flecha');
+        return;
+    }
+    
+    let arrow = playerArrows.get(playerId);
+    
+    // Si no existe la flecha, crearla
+    if (!arrow) {
+        arrow = document.createElement('div');
+        arrow.className = 'player-arrow';
+        arrow.id = `player-arrow-${playerId}`;
+        arrow.setAttribute('data-player-name', playerName);
+        arrow.textContent = playerName.charAt(0).toUpperCase(); // Mostrar primera letra del nombre
+        document.body.appendChild(arrow);
+        playerArrows.set(playerId, arrow);
+        console.log(`[ARROW] Flecha creada para ${playerName} (ID: ${playerId})`);
+    }
+    
+    // Calcular posición de la flecha en la pantalla
+    const canvas = document.getElementById('cvs');
+    if (!canvas) {
+        console.log('[ARROW_UPDATE] Canvas no encontrado');
+        return;
+    }
+    
+    const canvasRect = canvas.getBoundingClientRect();
+    const screenX = ((playerX - player.x) * global.game.scale) + (canvasRect.width / 2);
+    const screenY = ((playerY - player.y) * global.game.scale) + (canvasRect.height / 2);
+    
+    // Asegurar que la flecha esté dentro de los límites de la pantalla
+    const arrowSize = 40;
+    const maxX = window.innerWidth - arrowSize;
+    const maxY = window.innerHeight - arrowSize;
+    
+    const finalX = Math.max(arrowSize, Math.min(maxX, screenX));
+    const finalY = Math.max(arrowSize, Math.min(maxY, screenY));
+    
+    // Aplicar posición
+    arrow.style.left = finalX + 'px';
+    arrow.style.top = finalY + 'px';
+    
+    // Calcular ángulo hacia el jugador
+    const deltaX = playerX - player.x;
+    const deltaY = playerY - player.y;
+    const angle = Math.atan2(deltaY, deltaX) * (180 / Math.PI);
+    
+    // Aplicar rotación
+    arrow.style.transform = `rotate(${angle}deg)`;
+    
+    console.log(`[ARROW_UPDATE] Flecha actualizada para ${playerName} en (${finalX}, ${finalY}) con ángulo ${angle}°`);
+}
+
+// Función para procesar flechas pendientes cuando las variables del juego estén disponibles
+function processPendingArrows() {
+    if (window.pendingArrows && window.pendingArrows.length > 0) {
+        console.log('[ARROW_PENDING] Procesando', window.pendingArrows.length, 'flechas pendientes');
+        window.pendingArrows.forEach(arrowData => {
+            updatePlayerArrow(arrowData.playerId, arrowData.playerName, arrowData.playerX, arrowData.playerY);
+        });
+        window.pendingArrows = [];
+    }
+}
+
+// Función para remover flecha de jugador
+function removePlayerArrow(playerId) {
+    const arrow = playerArrows.get(playerId);
+    if (arrow && arrow.parentNode) {
+        arrow.parentNode.removeChild(arrow);
+        playerArrows.delete(playerId);
+        console.log(`[ARROW] Flecha removida para jugador ID: ${playerId}`);
+    }
+}
+
+// Función para limpiar todas las flechas
+function clearAllPlayerArrows() {
+    playerArrows.forEach((arrow, playerId) => {
+        if (arrow.parentNode) {
+            arrow.parentNode.removeChild(arrow);
+        }
+    });
+    playerArrows.clear();
+    console.log('[ARROW] Todas las flechas removidas');
+}
+
+// Función de prueba para las flechas (llamar desde consola: testArrows())
+window.testArrows = function() {
+    console.log('[TEST] Probando flechas de jugadores...');
+    // Simular algunos jugadores con posiciones fijas para prueba
+    updatePlayerArrow('test1', 'Test1', 1000, 1000);
+    updatePlayerArrow('test2', 'Test2', 2000, 1500);
+    updatePlayerArrow('test3', 'Test3', 500, 2000);
+    console.log('[TEST] Flechas de prueba creadas. Si no aparecen, las variables del juego no están disponibles.');
+};
+
+// Función de prueba simple que crea flechas directamente (sin depender de variables del juego)
+window.testSimpleArrows = function() {
+    console.log('[TEST] Creando flechas simples directamente...');
+    
+    // Crear 3 flechas en posiciones fijas
+    const positions = [
+        { x: 100, y: 100, name: 'A' },
+        { x: window.innerWidth - 150, y: 100, name: 'B' },
+        { x: window.innerWidth / 2, y: window.innerHeight - 150, name: 'C' }
+    ];
+    
+    positions.forEach((pos, index) => {
+        const arrow = document.createElement('div');
+        arrow.className = 'player-arrow';
+        arrow.id = `simple-arrow-${index}`;
+        arrow.textContent = pos.name;
+        arrow.style.left = pos.x + 'px';
+        arrow.style.top = pos.y + 'px';
+        arrow.style.transform = 'rotate(0deg)';
+        document.body.appendChild(arrow);
+        console.log(`[TEST] Flecha simple ${pos.name} creada en (${pos.x}, ${pos.y})`);
+    });
+    
+    console.log('[TEST] 3 flechas simples creadas. Deberías verlas en la pantalla.');
+};
+
+// Función de prueba para el combate (llamar desde consola: testCombat())
+window.testCombat = function() {
+    console.log('[TEST] Probando alerta de combate...');
+    showGlobalCombatAlert('Jugador Test', 'Otro Jugador');
+};
+
+// Función para limpiar flechas (llamar desde consola: clearArrows())
+window.clearArrows = function() {
+    console.log('[TEST] Limpiando todas las flechas...');
+    clearAllPlayerArrows();
+};
+
+// Función para simular un segundo jugador con las variables correctas
+window.testRealArrow = function() {
+    console.log('[TEST] Simulando jugador real con variables del juego...');
+    
+    // Verificar que las variables estén disponibles
+    if (typeof player === 'undefined' || typeof global === 'undefined') {
+        console.log('[TEST] Variables del juego no disponibles. Asegúrate de estar en el juego.');
+        console.log('[TEST] player:', typeof player);
+        console.log('[TEST] global:', typeof global);
+        return;
+    }
+    
+    // Simular un jugador a 500 píxeles de distancia
+    const fakePlayerX = player.x + 500;
+    const fakePlayerY = player.y + 300;
+    
+    console.log('[TEST] Creando flecha para jugador simulado en:', fakePlayerX, fakePlayerY);
+    console.log('[TEST] Jugador actual en:', player.x, player.y);
+    
+    // Llamar directamente updatePlayerArrow con las variables correctas
+    updatePlayerArrow('fake-player-id', 'TestPlayer', fakePlayerX, fakePlayerY);
+};
+
+// Hacer funciones y variables globalmente accesibles
+window.processPendingArrows = processPendingArrows;
+window.updatePlayerArrow = updatePlayerArrow;
+window.removePlayerArrow = removePlayerArrow;
+
+// Hacer variables del juego globalmente accesibles para debug
+window.getGameVars = function() {
+    return {
+        player: typeof player !== 'undefined' ? player : 'undefined',
+        global: typeof global !== 'undefined' ? global : 'undefined',
+        users: typeof users !== 'undefined' ? users : 'undefined'
+    };
+};
+
+// Función para mostrar alerta global de combate
+function showGlobalCombatAlert(eaterName, eatenName) {
+    // Verificar si las alertas de combate están habilitadas
+    const showCombatAlerts = document.getElementById('showCombatAlerts');
+    if (showCombatAlerts && !showCombatAlerts.checked) {
+        return;
+    }
+    
+    // Crear elemento de alerta
+    const alert = document.createElement('div');
+    alert.className = 'combat-alert';
+    alert.innerHTML = `
+        <div class="player-name">⚔️ ${eaterName}</div>
+        <div class="message">¡Se comió a ${eatenName} y se dividió en 4 partes!</div>
+        <div class="message">¡Mira el giroscopio en el centro para encontrarlo!</div>
+    `;
+    
+    // Agregar al DOM
+    document.body.appendChild(alert);
+    
+    // Remover alerta después de 15 segundos (tiempo de restablecimiento de células divididas)
+    setTimeout(() => {
+        if (alert.parentNode) {
+            alert.parentNode.removeChild(alert);
+        }
+    }, 15000);
+}
+
+// Función para mostrar ayuda de la brújula
+function showCompassHelp() {
+    const helpText = `
+🎯 BRÚJULA DE DETECCIÓN DE CÉLULAS
+
+CONTROLES:
+• B - Activar/Desactivar brújula
+• V - Cambiar entre brújula simple y avanzada
+• R - Activar/Desactivar radar de largo alcance
+• T - Activar/Desactivar radar de fondo
+• +/- - Ajustar rango del radar (solo cuando está activo)
+
+BRÚJULA SIMPLE:
+• Detecta células en todo el mapa (hasta 10km)
+• Prioriza células con dinero y masa alta
+• Flecha dorada = con dinero
+• Flecha roja = muy cercana (< 500px)
+• Flecha naranja = cercana (< 1000px)
+• Flecha azul = células grandes
+• Flecha verde = lejanas (> 1000px)
+
+BRÚJULA AVANZADA:
+• Detecta hasta 5 células en todo el mapa (hasta 15km)
+• Considera distancia, masa y dinero
+• Flechas más gruesas = más importantes
+• Flecha dorada = células con dinero
+• Indicadores de masa/dinero en células
+• Prioriza células valiosas a cualquier distancia
+
+RADAR DE LARGO ALCANCE:
+• Detecta células hasta 5000px de distancia (configurable)
+• Muestra hasta 5 células más importantes
+• Círculos concéntricos para rangos
+• Efecto de escaneo giratorio
+• Prioriza células con dinero
+• Indicadores de distancia en cada flecha
+• Rango ajustable con teclas +/- (2km - 10km)
+
+RADAR DE FONDO:
+• Siempre activo en la esquina superior izquierda
+• Detecta la célula más valiosa en todo el mapa (hasta 20km)
+• Prioriza células con dinero y masa alta
+• Indicador pequeño y discreto
+• Efecto de escaneo continuo
+• Usa datos completos del servidor
+
+EFECTOS ESPECIALES:
+• Pulsación roja = células muy cercanas (< 300px)
+• Pulsación dorada = células con mucho dinero (> $100)
+• Información de distancia y masa/dinero
+• Puntos cardinales (N, S, E, W)
+• Efecto de escaneo del radar
+    `;
+    
+    console.log(helpText);
+    window.chat.addSystemLine(' Ayuda de brújula mostrada en consola (F12)');
+}
+
+// Hacer la función de ayuda globalmente accesible
+window.showCompassHelp = showCompassHelp;
+
+// Forzar recarga del cache - Versión del sistema de radar
+console.log('[RADAR_SYSTEM] 🚀 Sistema de radar inicializado - v2024.01.27');
+
+// Comando para forzar recarga del cache
+window.forceReload = function() {
+    console.log('[RELOAD] 🔄 Forzando recarga del cache...');
+    // Limpiar cache y recargar
+    if ('caches' in window) {
+        caches.keys().then(function(names) {
+            for (let name of names) caches.delete(name);
+        });
+    }
+    // Forzar recarga sin cache
+    window.location.reload(true);
+};
+
+// Comando para limpiar solo la consola
+window.clearConsole = function() {
+    console.clear();
+    console.log('[CONSOLE] 🧹 Consola limpiada');
+};
+
+// Comando para limpiar logs de arrow debug
+window.clearArrowDebug = function() {
+    console.clear();
+    console.log('[ARROW_CLEAN] 🧹 Logs de arrow debug eliminados');
+    console.log('[ARROW_CLEAN] ✅ Consola limpia para usar');
+};
+
+// Comando para deshabilitar logs de debug
+window.disableDebugLogs = function() {
+    global.debugLogsDisabled = true;
+    console.log('[DEBUG] 🚫 Logs de debug deshabilitados');
+    console.clear();
+};
+
+// Comando para habilitar logs de debug
+window.enableDebugLogs = function() {
+    global.debugLogsDisabled = false;
+    console.log('[DEBUG] ✅ Logs de debug habilitados');
+};
+
+// Comando de emergencia para limpiar todo
+window.emergencyClean = function() {
+    console.clear();
+    global.debugLogsDisabled = true;
+    console.log('[EMERGENCY] 🚨 Limpieza de emergencia completada');
+    console.log('[EMERGENCY] ✅ Consola limpia y logs deshabilitados');
+    console.log('[EMERGENCY] 💡 Usa enableDebugLogs() para reactivar logs');
+};
+
+// Comando para verificar estado del radar
+window.checkRadarStatus = function() {
+    console.log('[STATUS] 📊 Estado del sistema de radar:');
+    console.log('[STATUS] global.radarData:', global.radarData ? global.radarData.length : 'undefined');
+    console.log('[STATUS] global.showCompass:', global.showCompass);
+    console.log('[STATUS] global.testSimpleRadar:', global.testSimpleRadar);
+    console.log('[STATUS] global.useRadarCompass:', global.useRadarCompass);
+    console.log('[STATUS] global.showBackgroundRadar:', global.showBackgroundRadar);
+    
+    if (global.radarData && global.radarData.length > 0) {
+        console.log('[STATUS] ✅ Datos del radar disponibles');
+        global.radarData.forEach((player, index) => {
+            console.log(`[STATUS] Jugador ${index + 1}: ${player.name} en (${player.x}, ${player.y})`);
+        });
+    } else {
+        console.log('[STATUS] ❌ No hay datos del radar');
+    }
+};

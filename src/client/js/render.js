@@ -288,15 +288,16 @@ const drawRedZone = (redZone, player, screen, graph) => {
     const zoneCenterX = redZone.centerX - player.x + screen.width / 2;
     const zoneCenterY = redZone.centerY - player.y + screen.height / 2;
     
-    // Crear gradiente para la zona roja
-    const gradient = graph.createRadialGradient(zoneCenterX, zoneCenterY, 0, zoneCenterX, zoneCenterY, redZone.radius);
-    gradient.addColorStop(0, 'rgba(255, 0, 0, 0.1)');
-    gradient.addColorStop(0.7, 'rgba(255, 0, 0, 0.3)');
-    gradient.addColorStop(1, 'rgba(255, 0, 0, 0.6)');
-    
-    // Dibujar el área de la zona roja (todo lo que está fuera del círculo)
-    graph.fillStyle = gradient;
+    // Dibujar la zona roja con color sólido hasta exactamente la línea del círculo
+    graph.fillStyle = 'rgba(255, 0, 0, 0.4)';
     graph.fillRect(0, 0, screen.width, screen.height);
+    
+    // Crear un "agujero" transparente para la zona segura usando composición
+    graph.globalCompositeOperation = 'destination-out';
+    graph.beginPath();
+    graph.arc(zoneCenterX, zoneCenterY, redZone.radius, 0, 2 * Math.PI);
+    graph.fill();
+    graph.globalCompositeOperation = 'source-over'; // Restaurar operación de composición
     
     // Dibujar el borde de la zona segura (círculo interior)
     graph.strokeStyle = 'rgba(255, 0, 0, 0.8)';
@@ -388,6 +389,908 @@ const drawBomb = (position, bomb, graph) => {
     graph.setLineDash([]);
 };
 
+// Función para dibujar la brújula que apunta hacia células cercanas (ahora con detección extendida)
+const drawCompass = (player, users, screen, graph, globalConfig) => {
+    if (!player) return;
+    
+    // Configuración de la brújula
+    const compassRadius = 60;
+    const compassX = 80; // Posición en la esquina superior izquierda
+    const compassY = 80;
+    const arrowLength = 40;
+    const arrowWidth = 8;
+    const maxDetectionRange = 10000; // Rango muy extendido usando datos del radar
+    
+    // Usar datos del radar si están disponibles, sino usar datos visibles
+    const radarData = globalConfig && globalConfig.radarData ? globalConfig.radarData : users;
+    if (!radarData || radarData.length === 0) {
+        console.log('[COMPASS_DEBUG] No hay datos de radar disponibles');
+        return;
+    }
+    
+    console.log('[COMPASS_DEBUG] Usando datos de radar con', radarData.length, 'jugadores');
+    console.log('[COMPASS_DEBUG] Jugador actual en:', player.x, player.y);
+    
+    // Verificar si hay un objetivo de combate activo
+    let bestCell = null;
+    if (globalConfig && globalConfig.combatTarget && globalConfig.combatTarget.id) {
+        const combatTarget = globalConfig.combatTarget;
+        
+        // Buscar al jugador objetivo en los datos del radar usando su ID
+        let targetPlayer = null;
+        if (radarData && radarData.length > 0) {
+            targetPlayer = radarData.find(user => user.id === combatTarget.id);
+        }
+        
+        if (targetPlayer && targetPlayer.cells && targetPlayer.cells.length > 0) {
+            // Calcular la posición promedio de todas las células del jugador objetivo
+            let totalX = 0;
+            let totalY = 0;
+            let cellCount = 0;
+            
+            for (let cell of targetPlayer.cells) {
+                totalX += cell.x;
+                totalY += cell.y;
+                cellCount++;
+            }
+            
+            const targetX = cellCount > 0 ? totalX / cellCount : 0;
+            const targetY = cellCount > 0 ? totalY / cellCount : 0;
+            const distance = Math.hypot(targetX - player.x, targetY - player.y);
+            
+            // Si el objetivo de combate está dentro del rango, priorizarlo
+            if (distance <= maxDetectionRange && distance > 0) {
+                bestCell = {
+                    x: targetX,
+                    y: targetY,
+                    playerName: combatTarget.name,
+                    distance: distance,
+                    score: 999999, // Puntuación muy alta para priorizar
+                    isCombatTarget: true // Marcar como objetivo de combate
+                };
+                console.log('[COMPASS_DEBUG] Objetivo de combate detectado en tiempo real:', combatTarget.name, 'en', targetX.toFixed(0), targetY.toFixed(0), 'distancia:', distance.toFixed(0));
+            } else {
+                console.log('[COMPASS_DEBUG] Objetivo de combate fuera de rango:', combatTarget.name, 'distancia:', distance.toFixed(0));
+            }
+        } else {
+            console.log('[COMPASS_DEBUG] Objetivo de combate no encontrado en radar:', combatTarget.name, '(ID:', combatTarget.id + ')');
+        }
+    }
+    
+    // Si no hay objetivo de combate, encontrar la célula más importante
+    if (!bestCell) {
+        let bestScore = -Infinity;
+        
+        for (let user of radarData) {
+            if (user.id === player.id) continue; // Saltar al propio jugador
+            
+            for (let cell of user.cells) {
+                const distance = Math.hypot(cell.x - player.x, cell.y - player.y);
+                
+                // Solo considerar células dentro del rango extendido
+                if (distance <= maxDetectionRange && distance > 0) {
+                    // Calcular puntuación basada en distancia, masa y dinero
+                    const moneyBonus = (cell.gameMoney || 0) * 3; // Más peso al dinero
+                    const massBonus = cell.mass / 30;
+                    const distancePenalty = distance / 2000; // Menos penalización por distancia
+                    const score = moneyBonus + massBonus - distancePenalty;
+                    
+                    if (score > bestScore) {
+                        bestScore = score;
+                        bestCell = {
+                            ...cell,
+                            playerName: user.name,
+                            playerHue: user.hue,
+                            distance: distance,
+                            score: score
+                        };
+                    }
+                }
+            }
+        }
+    }
+    
+    if (!bestCell) {
+        console.log('[COMPASS_DEBUG] No se encontró ninguna célula importante');
+        return; // No hay células detectadas
+    }
+    
+    console.log('[COMPASS_DEBUG] Célula más importante:', bestCell.playerName, 'en', bestCell.x, bestCell.y, 'distancia:', bestCell.distance);
+    
+    // Calcular ángulo hacia la célula más importante
+    const deltaX = bestCell.x - player.x;
+    const deltaY = bestCell.y - player.y;
+    const angle = Math.atan2(deltaY, deltaX);
+    
+    // Dibujar el círculo base de la brújula
+    graph.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+    graph.fillStyle = 'rgba(0, 0, 0, 0.7)';
+    graph.lineWidth = 3;
+    graph.beginPath();
+    graph.arc(compassX, compassY, compassRadius, 0, 2 * Math.PI);
+    graph.fill();
+    graph.stroke();
+    
+    // Dibujar los puntos cardinales
+    graph.fillStyle = 'rgba(255, 255, 255, 0.6)';
+    graph.font = 'bold 12px sans-serif';
+    graph.textAlign = 'center';
+    graph.textBaseline = 'middle';
+    
+    // Norte
+    graph.fillText('N', compassX, compassY - compassRadius + 15);
+    // Sur
+    graph.fillText('S', compassX, compassY + compassRadius - 15);
+    // Este
+    graph.fillText('E', compassX + compassRadius - 15, compassY);
+    // Oeste
+    graph.fillText('W', compassX - compassRadius + 15, compassY);
+    
+    // Dibujar la flecha que apunta hacia la célula
+    const arrowEndX = compassX + Math.cos(angle) * arrowLength;
+    const arrowEndY = compassY + Math.sin(angle) * arrowLength;
+    
+    // Color de la flecha basado en las características de la célula
+    let arrowColor;
+    if (bestCell.isCombatTarget) {
+        arrowColor = '#FF0000'; // Rojo intenso para objetivo de combate
+    } else if (bestCell.gameMoney && bestCell.gameMoney > 0) {
+        arrowColor = '#FFD700'; // Dorado para células con dinero
+    } else if (bestCell.distance < 500) {
+        arrowColor = '#FF4444'; // Rojo para células muy cercanas
+    } else if (bestCell.distance < 1000) {
+        arrowColor = '#FF8800'; // Naranja para células cercanas
+    } else if (bestCell.mass > 200) {
+        arrowColor = '#00AAFF'; // Azul para células grandes
+    } else {
+        arrowColor = '#44FF44'; // Verde para células lejanas
+    }
+    
+    graph.strokeStyle = arrowColor;
+    graph.fillStyle = arrowColor;
+    graph.lineWidth = arrowWidth;
+    
+    // Dibujar la línea principal de la flecha
+    graph.beginPath();
+    graph.moveTo(compassX, compassY);
+    graph.lineTo(arrowEndX, arrowEndY);
+    graph.stroke();
+    
+    // Dibujar la punta de la flecha
+    const arrowHeadLength = 12;
+    const arrowHeadAngle = Math.PI / 6; // 30 grados
+    
+    graph.beginPath();
+    graph.moveTo(arrowEndX, arrowEndY);
+    graph.lineTo(
+        arrowEndX - arrowHeadLength * Math.cos(angle - arrowHeadAngle),
+        arrowEndY - arrowHeadLength * Math.sin(angle - arrowHeadAngle)
+    );
+    graph.moveTo(arrowEndX, arrowEndY);
+    graph.lineTo(
+        arrowEndX - arrowHeadLength * Math.cos(angle + arrowHeadAngle),
+        arrowEndY - arrowHeadLength * Math.sin(angle + arrowHeadAngle)
+    );
+    graph.stroke();
+    
+    // Dibujar información de la célula objetivo
+    const infoX = compassX;
+    const infoY = compassY + compassRadius + 30;
+    
+    graph.fillStyle = 'rgba(0, 0, 0, 0.8)';
+    graph.fillRect(infoX - 80, infoY - 25, 160, 50);
+    
+    graph.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    graph.font = 'bold 12px sans-serif';
+    graph.textAlign = 'center';
+    graph.textBaseline = 'middle';
+    
+    // Nombre del jugador
+    if (bestCell.isCombatTarget) {
+        graph.fillStyle = '#FF0000';
+        graph.font = 'bold 12px sans-serif';
+        graph.fillText(`⚔️ ${bestCell.playerName}`, infoX, infoY - 8);
+    } else {
+        graph.fillText(bestCell.playerName, infoX, infoY - 8);
+    }
+    
+    // Distancia
+    const distanceText = `${Math.round(bestCell.distance)}px`;
+    graph.font = '10px sans-serif';
+    graph.fillText(distanceText, infoX, infoY + 8);
+    
+    // Indicador especial para objetivo de combate
+    if (bestCell.isCombatTarget) {
+        graph.fillStyle = '#FF0000';
+        graph.font = 'bold 10px sans-serif';
+        graph.fillText('OBJETIVO DE COMBATE', infoX, infoY + 22);
+    } else if (bestCell.gameMoney && bestCell.gameMoney > 0) {
+        // Mostrar dinero si está disponible
+        graph.fillStyle = '#FFD700';
+        graph.font = 'bold 10px sans-serif';
+        graph.fillText(`$${bestCell.gameMoney}`, infoX, infoY + 22);
+    } else if (bestCell.mass > 100) {
+        graph.fillStyle = '#FFD700';
+        graph.font = 'bold 10px sans-serif';
+        graph.fillText(`${Math.round(bestCell.mass)}`, infoX, infoY + 22);
+    }
+    
+    // Efecto pulsante para células muy cercanas, con dinero o objetivo de combate
+    if (bestCell.isCombatTarget) {
+        // Efecto pulsante intenso para objetivo de combate
+        const pulse = Math.sin(Date.now() / 100) * 0.5 + 0.5;
+        graph.strokeStyle = `rgba(255, 0, 0, ${pulse})`;
+        graph.lineWidth = 4;
+        graph.beginPath();
+        graph.arc(compassX, compassY, compassRadius + 8, 0, 2 * Math.PI);
+        graph.stroke();
+        
+        // Efecto adicional de brillo rojo
+        graph.shadowColor = 'rgba(255, 0, 0, 0.8)';
+        graph.shadowBlur = 15;
+        graph.beginPath();
+        graph.arc(compassX, compassY, compassRadius + 5, 0, 2 * Math.PI);
+        graph.stroke();
+        graph.shadowBlur = 0;
+    } else if (bestCell.distance < 300 || (bestCell.gameMoney && bestCell.gameMoney > 50)) {
+        const pulse = Math.sin(Date.now() / 200) * 0.3 + 0.7;
+        const pulseColor = bestCell.gameMoney && bestCell.gameMoney > 50 ? 
+            `rgba(255, 215, 0, ${pulse})` : `rgba(255, 68, 68, ${pulse})`;
+        graph.strokeStyle = pulseColor;
+        graph.lineWidth = 2;
+        graph.beginPath();
+        graph.arc(compassX, compassY, compassRadius + 5, 0, 2 * Math.PI);
+        graph.stroke();
+    }
+};
+
+// Función para dibujar una brújula avanzada que muestra múltiples células importantes
+const drawAdvancedCompass = (player, users, screen, graph, globalConfig) => {
+    if (!player) return;
+    
+    // Configuración de la brújula avanzada
+    const compassRadius = 80;
+    const compassX = screen.width - 100; // Posición en la esquina superior derecha
+    const compassY = 120;
+    const maxArrows = 5; // Aumentado para mostrar más células
+    const maxDetectionRange = 15000; // Rango muy extendido
+    
+    // Usar datos del radar si están disponibles, sino usar datos visibles
+    const radarData = globalConfig && globalConfig.radarData ? globalConfig.radarData : users;
+    if (!radarData || radarData.length === 0) return;
+    
+    // Encontrar las células más importantes en todo el mapa
+    let importantCells = [];
+    
+    for (let user of radarData) {
+        if (user.id === player.id) continue; // Saltar al propio jugador
+        
+        for (let cell of user.cells) {
+            const distance = Math.hypot(cell.x - player.x, cell.y - player.y);
+            
+            // Solo considerar células dentro del rango extendido
+            if (distance <= maxDetectionRange && distance > 0) {
+                // Fórmula de importancia mejorada que considera masa, distancia y dinero
+                const moneyBonus = (cell.gameMoney || 0) * 4; // Más peso al dinero
+                const massBonus = cell.mass / 50;
+                const distanceBonus = 2000 / Math.max(distance, 1); // Bonus por proximidad
+                const importance = massBonus + distanceBonus + moneyBonus;
+                
+                importantCells.push({
+                    ...cell,
+                    playerName: user.name,
+                    playerHue: user.hue,
+                    distance: distance,
+                    importance: importance
+                });
+            }
+        }
+    }
+    
+    // Ordenar por importancia y tomar las más importantes
+    importantCells.sort((a, b) => b.importance - a.importance);
+    importantCells = importantCells.slice(0, maxArrows);
+    
+    if (importantCells.length === 0) return;
+    
+    // Dibujar el círculo base de la brújula
+    graph.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+    graph.fillStyle = 'rgba(0, 0, 0, 0.8)';
+    graph.lineWidth = 3;
+    graph.beginPath();
+    graph.arc(compassX, compassY, compassRadius, 0, 2 * Math.PI);
+    graph.fill();
+    graph.stroke();
+    
+    // Dibujar los puntos cardinales
+    graph.fillStyle = 'rgba(255, 255, 255, 0.7)';
+    graph.font = 'bold 14px sans-serif';
+    graph.textAlign = 'center';
+    graph.textBaseline = 'middle';
+    
+    // Norte
+    graph.fillText('N', compassX, compassY - compassRadius + 18);
+    // Sur
+    graph.fillText('S', compassX, compassY + compassRadius - 18);
+    // Este
+    graph.fillText('E', compassX + compassRadius - 18, compassY);
+    // Oeste
+    graph.fillText('W', compassX - compassRadius + 18, compassY);
+    
+    // Dibujar flechas para cada célula importante
+    importantCells.forEach((cell, index) => {
+        const deltaX = cell.x - player.x;
+        const deltaY = cell.y - player.y;
+        const angle = Math.atan2(deltaY, deltaX);
+        
+        // Longitud de flecha basada en la importancia
+        const arrowLength = 35 + (cell.importance / 10);
+        const arrowWidth = 6 - index; // Flechas más gruesas para células más importantes
+        
+        // Color de la flecha basado en la distancia, masa y dinero
+        let arrowColor;
+        if (cell.gameMoney && cell.gameMoney > 0) {
+            arrowColor = '#FFD700'; // Dorado para células con dinero
+        } else if (cell.distance < 400) {
+            arrowColor = '#FF4444'; // Rojo para células muy cercanas
+        } else if (cell.distance < 800) {
+            arrowColor = '#FF8800'; // Naranja para células cercanas
+        } else if (cell.mass > 200) {
+            arrowColor = '#00AAFF'; // Azul para células grandes
+        } else {
+            arrowColor = '#44FF44'; // Verde para células lejanas
+        }
+        
+        const arrowEndX = compassX + Math.cos(angle) * arrowLength;
+        const arrowEndY = compassY + Math.sin(angle) * arrowLength;
+        
+        graph.strokeStyle = arrowColor;
+        graph.fillStyle = arrowColor;
+        graph.lineWidth = arrowWidth;
+        
+        // Dibujar la línea principal de la flecha
+        graph.beginPath();
+        graph.moveTo(compassX, compassY);
+        graph.lineTo(arrowEndX, arrowEndY);
+        graph.stroke();
+        
+        // Dibujar la punta de la flecha
+        const arrowHeadLength = 10;
+        const arrowHeadAngle = Math.PI / 6;
+        
+        graph.beginPath();
+        graph.moveTo(arrowEndX, arrowEndY);
+        graph.lineTo(
+            arrowEndX - arrowHeadLength * Math.cos(angle - arrowHeadAngle),
+            arrowEndY - arrowHeadLength * Math.sin(angle - arrowHeadAngle)
+        );
+        graph.moveTo(arrowEndX, arrowEndY);
+        graph.lineTo(
+            arrowEndX - arrowHeadLength * Math.cos(angle + arrowHeadAngle),
+            arrowEndY - arrowHeadLength * Math.sin(angle + arrowHeadAngle)
+        );
+        graph.stroke();
+        
+        // Agregar un pequeño indicador de masa o dinero en la punta de la flecha
+        if (cell.gameMoney && cell.gameMoney > 0) {
+            // Mostrar dinero si está disponible
+            graph.fillStyle = 'rgba(0, 0, 0, 0.8)';
+            graph.fillRect(arrowEndX - 20, arrowEndY - 8, 40, 16);
+            graph.fillStyle = '#FFD700';
+            graph.font = 'bold 10px sans-serif';
+            graph.textAlign = 'center';
+            graph.textBaseline = 'middle';
+            graph.fillText(`$${cell.gameMoney}`, arrowEndX, arrowEndY);
+        } else if (cell.mass > 150) {
+            // Mostrar masa si no hay dinero
+            graph.fillStyle = 'rgba(0, 0, 0, 0.8)';
+            graph.fillRect(arrowEndX - 15, arrowEndY - 8, 30, 16);
+            graph.fillStyle = '#FFD700';
+            graph.font = 'bold 10px sans-serif';
+            graph.textAlign = 'center';
+            graph.textBaseline = 'middle';
+            graph.fillText(`${Math.round(cell.mass)}`, arrowEndX, arrowEndY);
+        }
+    });
+    
+    // Dibujar información general en la parte inferior
+    const infoX = compassX;
+    const infoY = compassY + compassRadius + 40;
+    
+    graph.fillStyle = 'rgba(0, 0, 0, 0.8)';
+    graph.fillRect(infoX - 90, infoY - 20, 180, 40);
+    
+    graph.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    graph.font = 'bold 12px sans-serif';
+    graph.textAlign = 'center';
+    graph.textBaseline = 'middle';
+    
+    const closestCell = importantCells[0];
+    graph.fillText(`${closestCell.playerName}`, infoX, infoY - 5);
+    
+    graph.font = '10px sans-serif';
+    graph.fillText(`${Math.round(closestCell.distance)}px`, infoX, infoY + 8);
+    
+    // Mostrar dinero si está disponible
+    if (closestCell.gameMoney && closestCell.gameMoney > 0) {
+        graph.fillStyle = '#FFD700';
+        graph.font = 'bold 10px sans-serif';
+        graph.fillText(`$${closestCell.gameMoney}`, infoX, infoY + 22);
+    }
+    
+    // Efecto pulsante para células muy cercanas o con mucho dinero
+    const veryCloseCells = importantCells.filter(cell => cell.distance < 300);
+    const richCells = importantCells.filter(cell => cell.gameMoney && cell.gameMoney > 50);
+    
+    if (richCells.length > 0) {
+        // Efecto dorado pulsante para células con dinero
+        const pulse = Math.sin(Date.now() / 200) * 0.5 + 0.5;
+        graph.strokeStyle = `rgba(255, 215, 0, ${pulse})`;
+        graph.lineWidth = 4;
+        graph.beginPath();
+        graph.arc(compassX, compassY, compassRadius + 10, 0, 2 * Math.PI);
+        graph.stroke();
+        
+        // Efecto adicional de brillo
+        graph.shadowColor = 'rgba(255, 215, 0, 0.8)';
+        graph.shadowBlur = 15;
+        graph.beginPath();
+        graph.arc(compassX, compassY, compassRadius + 5, 0, 2 * Math.PI);
+        graph.stroke();
+        graph.shadowBlur = 0;
+    } else if (veryCloseCells.length > 0) {
+        // Efecto rojo pulsante para células muy cercanas
+        const pulse = Math.sin(Date.now() / 150) * 0.4 + 0.6;
+        graph.strokeStyle = `rgba(255, 68, 68, ${pulse})`;
+        graph.lineWidth = 3;
+        graph.beginPath();
+        graph.arc(compassX, compassY, compassRadius + 8, 0, 2 * Math.PI);
+        graph.stroke();
+    }
+};
+
+// Función para dibujar una brújula de radar que detecta células a larga distancia
+const drawRadarCompass = (player, users, screen, graph, globalConfig) => {
+    if (!player || !users || users.length === 0) return;
+    
+    // Configuración del radar
+    const radarRadius = 100;
+    const radarX = screen.width - 120; // Posición en la esquina superior derecha
+    const radarY = 150;
+    const maxDetectionRange = (globalConfig && globalConfig.radarRange) || 5000; // Rango máximo de detección configurable
+    
+    // Encontrar todas las células dentro del rango de radar
+    let detectedCells = [];
+    
+    for (let user of users) {
+        if (user.id === player.id) continue; // Saltar al propio jugador
+        
+        for (let cell of user.cells) {
+            const distance = Math.hypot(cell.x - player.x, cell.y - player.y);
+            
+            // Solo incluir células dentro del rango de radar
+            if (distance <= maxDetectionRange && distance > 0) {
+                const importance = (cell.mass / 100) + (1000 / Math.max(distance, 1));
+                const moneyBonus = (cell.gameMoney || 0) * 3; // El dinero tiene más peso en el radar
+                
+                detectedCells.push({
+                    ...cell,
+                    playerName: user.name,
+                    playerHue: user.hue,
+                    distance: distance,
+                    importance: importance + moneyBonus
+                });
+            }
+        }
+    }
+    
+    if (detectedCells.length === 0) return; // No hay células detectadas
+    
+    // Ordenar por importancia y tomar las más importantes
+    detectedCells.sort((a, b) => b.importance - a.importance);
+    const maxArrows = Math.min(detectedCells.length, 5); // Mostrar hasta 5 flechas
+    const topCells = detectedCells.slice(0, maxArrows);
+    
+    // Dibujar el círculo base del radar
+    graph.strokeStyle = 'rgba(0, 255, 0, 0.8)';
+    graph.fillStyle = 'rgba(0, 0, 0, 0.9)';
+    graph.lineWidth = 3;
+    graph.beginPath();
+    graph.arc(radarX, radarY, radarRadius, 0, 2 * Math.PI);
+    graph.fill();
+    graph.stroke();
+    
+    // Dibujar círculos concéntricos para indicar rangos
+    for (let i = 1; i <= 3; i++) {
+        const radius = (radarRadius * i) / 3;
+        graph.strokeStyle = `rgba(0, 255, 0, ${0.3 - i * 0.1})`;
+        graph.lineWidth = 1;
+        graph.beginPath();
+        graph.arc(radarX, radarY, radius, 0, 2 * Math.PI);
+        graph.stroke();
+    }
+    
+    // Dibujar los puntos cardinales
+    graph.fillStyle = 'rgba(0, 255, 0, 0.8)';
+    graph.font = 'bold 14px sans-serif';
+    graph.textAlign = 'center';
+    graph.textBaseline = 'middle';
+    
+    // Norte
+    graph.fillText('N', radarX, radarY - radarRadius + 20);
+    // Sur
+    graph.fillText('S', radarX, radarY + radarRadius - 20);
+    // Este
+    graph.fillText('E', radarX + radarRadius - 20, radarY);
+    // Oeste
+    graph.fillText('W', radarX - radarRadius + 20, radarY);
+    
+    // Dibujar flechas para cada célula detectada
+    topCells.forEach((cell, index) => {
+        const deltaX = cell.x - player.x;
+        const deltaY = cell.y - player.y;
+        const angle = Math.atan2(deltaY, deltaX);
+        
+        // Longitud de flecha basada en la distancia (flechas más largas para células más lejanas)
+        const normalizedDistance = cell.distance / maxDetectionRange;
+        const arrowLength = 30 + (normalizedDistance * 50);
+        const arrowWidth = 8 - index; // Flechas más gruesas para células más importantes
+        
+        // Color de la flecha basado en la distancia y características
+        let arrowColor;
+        if (cell.gameMoney && cell.gameMoney > 0) {
+            arrowColor = '#FFD700'; // Dorado para células con dinero
+        } else if (cell.distance < 1000) {
+            arrowColor = '#FF4444'; // Rojo para células cercanas
+        } else if (cell.distance < 2000) {
+            arrowColor = '#FF8800'; // Naranja para células medianas
+        } else if (cell.mass > 300) {
+            arrowColor = '#00AAFF'; // Azul para células grandes
+        } else {
+            arrowColor = '#44FF44'; // Verde para células lejanas
+        }
+        
+        const arrowEndX = radarX + Math.cos(angle) * arrowLength;
+        const arrowEndY = radarY + Math.sin(angle) * arrowLength;
+        
+        graph.strokeStyle = arrowColor;
+        graph.fillStyle = arrowColor;
+        graph.lineWidth = arrowWidth;
+        
+        // Dibujar la línea principal de la flecha
+        graph.beginPath();
+        graph.moveTo(radarX, radarY);
+        graph.lineTo(arrowEndX, arrowEndY);
+        graph.stroke();
+        
+        // Dibujar la punta de la flecha
+        const arrowHeadLength = 12;
+        const arrowHeadAngle = Math.PI / 6;
+        
+        graph.beginPath();
+        graph.moveTo(arrowEndX, arrowEndY);
+        graph.lineTo(
+            arrowEndX - arrowHeadLength * Math.cos(angle - arrowHeadAngle),
+            arrowEndY - arrowHeadLength * Math.sin(angle - arrowHeadAngle)
+        );
+        graph.moveTo(arrowEndX, arrowEndY);
+        graph.lineTo(
+            arrowEndX - arrowHeadLength * Math.cos(angle + arrowHeadAngle),
+            arrowEndY - arrowHeadLength * Math.sin(angle + arrowHeadAngle)
+        );
+        graph.stroke();
+        
+        // Agregar indicador de información en la punta de la flecha
+        if (cell.gameMoney && cell.gameMoney > 0) {
+            // Mostrar dinero
+            graph.fillStyle = 'rgba(0, 0, 0, 0.9)';
+            graph.fillRect(arrowEndX - 25, arrowEndY - 10, 50, 20);
+            graph.fillStyle = '#FFD700';
+            graph.font = 'bold 10px sans-serif';
+            graph.textAlign = 'center';
+            graph.textBaseline = 'middle';
+            graph.fillText(`$${cell.gameMoney}`, arrowEndX, arrowEndY);
+        } else if (cell.mass > 200) {
+            // Mostrar masa
+            graph.fillStyle = 'rgba(0, 0, 0, 0.9)';
+            graph.fillRect(arrowEndX - 20, arrowEndY - 10, 40, 20);
+            graph.fillStyle = '#FFD700';
+            graph.font = 'bold 10px sans-serif';
+            graph.textAlign = 'center';
+            graph.textBaseline = 'middle';
+            graph.fillText(`${Math.round(cell.mass)}`, arrowEndX, arrowEndY);
+        }
+        
+        // Agregar indicador de distancia en la base de la flecha
+        const distanceText = `${Math.round(cell.distance)}px`;
+        graph.fillStyle = 'rgba(0, 0, 0, 0.8)';
+        graph.fillRect(arrowEndX - 30, arrowEndY + 5, 60, 15);
+        graph.fillStyle = 'white';
+        graph.font = '9px sans-serif';
+        graph.textAlign = 'center';
+        graph.textBaseline = 'middle';
+        graph.fillText(distanceText, arrowEndX, arrowEndY + 12);
+    });
+    
+    // Dibujar información del radar en la parte inferior
+    const infoX = radarX;
+    const infoY = radarY + radarRadius + 50;
+    
+    graph.fillStyle = 'rgba(0, 0, 0, 0.9)';
+    graph.fillRect(infoX - 100, infoY - 25, 200, 50);
+    
+    graph.fillStyle = 'rgba(0, 255, 0, 0.9)';
+    graph.font = 'bold 12px sans-serif';
+    graph.textAlign = 'center';
+    graph.textBaseline = 'middle';
+    
+    graph.fillText('RADAR ACTIVO', infoX, infoY - 8);
+    
+    const closestCell = topCells[0];
+    graph.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    graph.font = '10px sans-serif';
+    graph.fillText(`${closestCell.playerName} - ${Math.round(closestCell.distance)}px`, infoX, infoY + 8);
+    
+    // Mostrar rango de detección
+    graph.fillStyle = 'rgba(0, 255, 0, 0.7)';
+    graph.font = '9px sans-serif';
+    graph.fillText(`Rango: ${maxDetectionRange/1000}km`, infoX, infoY + 22);
+    
+    // Mostrar instrucciones de ajuste
+    graph.fillStyle = 'rgba(255, 255, 255, 0.6)';
+    graph.font = '8px sans-serif';
+    graph.fillText(`+/- para ajustar rango`, infoX, infoY + 35);
+    
+    // Efecto de escaneo del radar
+    const scanAngle = (Date.now() / 100) % (2 * Math.PI);
+    graph.strokeStyle = 'rgba(0, 255, 0, 0.6)';
+    graph.lineWidth = 2;
+    graph.beginPath();
+    graph.moveTo(radarX, radarY);
+    graph.lineTo(
+        radarX + Math.cos(scanAngle) * radarRadius,
+        radarY + Math.sin(scanAngle) * radarRadius
+    );
+    graph.stroke();
+    
+    // Efecto pulsante para células con mucho dinero
+    const richCells = topCells.filter(cell => cell.gameMoney && cell.gameMoney > 100);
+    if (richCells.length > 0) {
+        const pulse = Math.sin(Date.now() / 300) * 0.6 + 0.4;
+        graph.strokeStyle = `rgba(255, 215, 0, ${pulse})`;
+        graph.lineWidth = 4;
+        graph.beginPath();
+        graph.arc(radarX, radarY, radarRadius + 12, 0, 2 * Math.PI);
+        graph.stroke();
+        
+        // Efecto de brillo dorado
+        graph.shadowColor = 'rgba(255, 215, 0, 0.8)';
+        graph.shadowBlur = 20;
+        graph.beginPath();
+        graph.arc(radarX, radarY, radarRadius + 8, 0, 2 * Math.PI);
+        graph.stroke();
+        graph.shadowBlur = 0;
+    }
+};
+
+// Función para dibujar un radar de segundo plano que siempre detecta células
+const drawBackgroundRadar = (player, users, screen, graph, globalConfig) => {
+    if (!player) return;
+    
+    // Configuración del radar de fondo
+    const radarRadius = 40;
+    const radarX = 60; // Posición en la esquina superior izquierda
+    const radarY = 60;
+    const maxDetectionRange = 20000; // Rango muy amplio usando datos del radar
+    
+    // Usar datos del radar si están disponibles, sino usar datos visibles
+    const radarData = globalConfig && globalConfig.radarData ? globalConfig.radarData : users;
+    if (!radarData || radarData.length === 0) return;
+    
+    // Encontrar la célula más valiosa en todo el mapa
+    let mostValuableCell = null;
+    let bestValue = -Infinity;
+    
+    for (let user of radarData) {
+        if (user.id === player.id) continue;
+        
+        for (let cell of user.cells) {
+            const distance = Math.hypot(cell.x - player.x, cell.y - player.y);
+            
+            if (distance <= maxDetectionRange && distance > 0) {
+                // Calcular valor basado en dinero, masa y distancia
+                const moneyValue = (cell.gameMoney || 0) * 8; // Más peso al dinero
+                const massValue = cell.mass / 15;
+                const distanceValue = 2000 / Math.max(distance, 1);
+                const totalValue = moneyValue + massValue + distanceValue;
+                
+                if (totalValue > bestValue) {
+                    bestValue = totalValue;
+                    mostValuableCell = {
+                        ...cell,
+                        playerName: user.name,
+                        distance: distance,
+                        value: totalValue
+                    };
+                }
+            }
+        }
+    }
+    
+    if (!mostValuableCell) return;
+    
+    // Dibujar radar de fondo pequeño
+    graph.strokeStyle = 'rgba(0, 255, 255, 0.6)';
+    graph.fillStyle = 'rgba(0, 0, 0, 0.5)';
+    graph.lineWidth = 2;
+    graph.beginPath();
+    graph.arc(radarX, radarY, radarRadius, 0, 2 * Math.PI);
+    graph.fill();
+    graph.stroke();
+    
+    // Efecto de escaneo
+    const scanAngle = (Date.now() / 150) % (2 * Math.PI);
+    graph.strokeStyle = 'rgba(0, 255, 255, 0.8)';
+    graph.lineWidth = 1;
+    graph.beginPath();
+    graph.moveTo(radarX, radarY);
+    graph.lineTo(
+        radarX + Math.cos(scanAngle) * radarRadius,
+        radarY + Math.sin(scanAngle) * radarRadius
+    );
+    graph.stroke();
+    
+    // Calcular ángulo hacia la célula más valiosa
+    const deltaX = mostValuableCell.x - player.x;
+    const deltaY = mostValuableCell.y - player.y;
+    const angle = Math.atan2(deltaY, deltaX);
+    
+    // Dibujar flecha pequeña
+    const arrowLength = 25;
+    const arrowEndX = radarX + Math.cos(angle) * arrowLength;
+    const arrowEndY = radarY + Math.sin(angle) * arrowLength;
+    
+    // Color basado en el valor
+    let arrowColor;
+    if (mostValuableCell.gameMoney && mostValuableCell.gameMoney > 0) {
+        arrowColor = '#FFD700';
+    } else if (mostValuableCell.distance < 1000) {
+        arrowColor = '#FF4444';
+    } else {
+        arrowColor = '#00FFFF';
+    }
+    
+    graph.strokeStyle = arrowColor;
+    graph.lineWidth = 3;
+    graph.beginPath();
+    graph.moveTo(radarX, radarY);
+    graph.lineTo(arrowEndX, arrowEndY);
+    graph.stroke();
+    
+    // Indicador de valor
+    if (mostValuableCell.gameMoney && mostValuableCell.gameMoney > 0) {
+        graph.fillStyle = 'rgba(0, 0, 0, 0.8)';
+        graph.fillRect(radarX - 20, radarY + 15, 40, 15);
+        graph.fillStyle = '#FFD700';
+        graph.font = 'bold 9px sans-serif';
+        graph.textAlign = 'center';
+        graph.textBaseline = 'middle';
+        graph.fillText(`$${mostValuableCell.gameMoney}`, radarX, radarY + 22);
+    }
+    
+    // Efecto pulsante si es muy valiosa
+    if (mostValuableCell.gameMoney && mostValuableCell.gameMoney > 100) {
+        const pulse = Math.sin(Date.now() / 200) * 0.5 + 0.5;
+        graph.strokeStyle = `rgba(255, 215, 0, ${pulse})`;
+        graph.lineWidth = 2;
+        graph.beginPath();
+        graph.arc(radarX, radarY, radarRadius + 3, 0, 2 * Math.PI);
+        graph.stroke();
+    }
+};
+
+// Función simplificada para probar la detección de células lejanas
+const drawSimpleRadarCompass = (player, screen, graph, globalConfig) => {
+    // Configuración simple
+    const compassX = screen.width - 100;
+    const compassY = 100;
+    const compassRadius = 50;
+    
+    // Verificar si hay datos disponibles
+    if (!player) return;
+    if (!globalConfig) return;
+    if (!globalConfig.radarData) return;
+    
+    const radarData = globalConfig.radarData;
+    console.log('[SIMPLE_RADAR] ✅ Datos disponibles:', radarData.length, 'jugadores');
+    
+    // Dibujar indicador de estado
+    graph.fillStyle = 'rgba(0, 0, 0, 0.8)';
+    graph.fillRect(compassX - 80, compassY - 30, 160, 60);
+    
+    graph.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    graph.font = 'bold 12px sans-serif';
+    graph.textAlign = 'center';
+    graph.textBaseline = 'middle';
+    graph.fillText(`Radar: ${radarData.length} jugadores`, compassX, compassY - 10);
+    
+    // Encontrar cualquier célula que no sea del jugador actual
+    let targetCell = null;
+    let otherPlayersCount = 0;
+    
+    for (let user of radarData) {
+        if (user.id === player.id) continue;
+        
+        otherPlayersCount++;
+        console.log(`[SIMPLE_RADAR] Jugador ${user.name} en (${user.x}, ${user.y}) con ${user.cells.length} células`);
+        
+        for (let cell of user.cells) {
+            const distance = Math.hypot(cell.x - player.x, cell.y - player.y);
+            console.log(`[SIMPLE_RADAR] Célula de ${user.name} en (${cell.x}, ${cell.y}) - Distancia: ${distance}`);
+            
+            if (distance > 0) {
+                targetCell = {
+                    ...cell,
+                    playerName: user.name,
+                    distance: distance
+                };
+                break;
+            }
+        }
+        if (targetCell) break;
+    }
+    
+    graph.fillText(`Otros: ${otherPlayersCount}`, compassX, compassY + 10);
+    
+    if (!targetCell) {
+        graph.fillStyle = '#FF4444';
+        graph.fillText('No hay objetivos', compassX, compassY + 30);
+        console.log('[SIMPLE_RADAR] No se encontró ninguna célula objetivo');
+        return;
+    }
+    
+    console.log('[SIMPLE_RADAR] Célula objetivo encontrada:', targetCell.playerName, 'en', targetCell.x, targetCell.y);
+    
+    // Dibujar brújula simple
+    graph.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+    graph.fillStyle = 'rgba(0, 0, 0, 0.7)';
+    graph.lineWidth = 3;
+    graph.beginPath();
+    graph.arc(compassX, compassY + 80, compassRadius, 0, 2 * Math.PI);
+    graph.fill();
+    graph.stroke();
+    
+    // Calcular ángulo
+    const deltaX = targetCell.x - player.x;
+    const deltaY = targetCell.y - player.y;
+    const angle = Math.atan2(deltaY, deltaX);
+    
+    // Dibujar flecha
+    const arrowLength = 35;
+    const arrowEndX = compassX + Math.cos(angle) * arrowLength;
+    const arrowEndY = (compassY + 80) + Math.sin(angle) * arrowLength;
+    
+    graph.strokeStyle = '#FF4444';
+    graph.lineWidth = 5;
+    graph.beginPath();
+    graph.moveTo(compassX, compassY + 80);
+    graph.lineTo(arrowEndX, arrowEndY);
+    graph.stroke();
+    
+    // Información
+    graph.fillStyle = 'rgba(0, 0, 0, 0.8)';
+    graph.fillRect(compassX - 60, compassY + 130, 120, 40);
+    
+    graph.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    graph.font = 'bold 10px sans-serif';
+    graph.textAlign = 'center';
+    graph.textBaseline = 'middle';
+    graph.fillText(targetCell.playerName, compassX, compassY + 145);
+    graph.fillText(`${Math.round(targetCell.distance)}px`, compassX, compassY + 160);
+    
+    console.log('[SIMPLE_RADAR] Brújula dibujada hacia', targetCell.playerName);
+};
+
 module.exports = {
     drawFood,
     drawPowerFood,
@@ -399,5 +1302,10 @@ module.exports = {
     drawBorder,
     drawRedZone,
     drawCashOutProgress,
-    drawBomb
+    drawBomb,
+    drawCompass,
+    drawAdvancedCompass,
+    drawRadarCompass,
+    drawBackgroundRadar,
+    drawSimpleRadarCompass
 };

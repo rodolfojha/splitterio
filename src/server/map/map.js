@@ -87,14 +87,22 @@ exports.Map = class {
             }
 
             var visiblePlayers = [];
+            console.log(`[MAP_DEBUG] Jugador actual: ${currentPlayer.name} (${currentPlayer.x}, ${currentPlayer.y})`);
+            console.log(`[MAP_DEBUG] Total de jugadores en el mapa: ${this.players.data.length}`);
+            
             for (let player of this.players.data) {
+                console.log(`[MAP_DEBUG] Verificando jugador: ${player.name} (${player.x}, ${player.y})`);
                 for (let cell of player.cells) {
-                    if (isVisibleEntity(cell, currentPlayer)) {
+                    const isVisible = isVisibleEntity(cell, currentPlayer);
+                    console.log(`[MAP_DEBUG] Célula de ${player.name} visible para ${currentPlayer.name}: ${isVisible}`);
+                    if (isVisible) {
                         visiblePlayers.push(extractData(player));
                         break;
                     }
                 }
             }
+            
+            console.log(`[MAP_DEBUG] Jugadores visibles para ${currentPlayer.name}: ${visiblePlayers.length}`);
 
             callback(extractData(currentPlayer), visiblePlayers, visibleFood, visibleMass, visibleViruses, visiblePowerFood);
         }

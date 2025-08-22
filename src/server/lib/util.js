@@ -5,8 +5,10 @@
 const cfg = require('../../../config');
 
 exports.validNick = function (nickname) {
-    var regex = /^[a-zA-Z0-9_\s]+$/;
-    return regex.exec(nickname) !== null;
+    // Permitir cualquier carácter Unicode que no sea un carácter de control
+    // Esto incluye acentos, emojis, y caracteres especiales
+    var regex = /^[^\x00-\x1F\x7F]+$/;
+    return regex.exec(nickname) !== null && nickname.length > 0 && nickname.length <= 25;
 };
 
 // determine mass from radius of circle
