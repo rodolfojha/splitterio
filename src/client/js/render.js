@@ -1,11 +1,86 @@
 const FULL_ANGLE = 2 * Math.PI;
 
+// Sistema de skins con imágenes
+const skinImages = {};
+const skinImagesLoaded = {};
+
+// Precargar todas las imágenes de skins
+const preloadSkinImages = () => {
+    const skinFiles = ['skin1.jpg', 'skin2.jpg', 'skin3.jpg', 'skin4.jpg'];
+    
+    skinFiles.forEach((skinFile, index) => {
+        const skinId = index + 1;
+        skinImages[skinId] = new Image();
+        skinImages[skinId].onload = function() {
+            skinImagesLoaded[skinId] = true;
+            console.log(`[SKIN_LOADER] Imagen de skin ${skinId} cargada: ${skinFile}`);
+        };
+        skinImages[skinId].onerror = function() {
+            console.error(`[SKIN_LOADER] Error al cargar imagen de skin ${skinId}: ${skinFile}`);
+        };
+        skinImages[skinId].src = `img/${skinFile}`;
+    });
+};
+
+// Inicializar la precarga de skins
+preloadSkinImages();
+
 const drawRoundObject = (position, radius, graph) => {
     graph.beginPath();
     graph.arc(position.x, position.y, radius, 0, FULL_ANGLE);
     graph.closePath();
     graph.fill();
     graph.stroke();
+}
+
+// Función para dibujar célula con textura de skin
+const drawCellWithSkin = (cell, graph) => {
+    const skinId = cell.skinId || 1; // Default a skin 1 si no hay skin asignada
+    
+    // Debug: verificar si la skin está cargada
+    if (!skinImagesLoaded[skinId]) {
+        console.log(`[SKIN_DEBUG] Skin ${skinId} no está cargada para célula ${cell.name}`);
+    }
+    
+    if (skinImagesLoaded[skinId] && skinImages[skinId]) {
+        console.log(`[SKIN_DEBUG] Dibujando skin ${skinId} para célula ${cell.name}`);
+        
+        // Crear un patrón de recorte circular para la skin
+        graph.save();
+        
+        // Crear un path circular para recortar la imagen
+        graph.beginPath();
+        graph.arc(cell.x, cell.y, cell.radius, 0, 2 * Math.PI);
+        graph.clip(); // Recortar todo lo que se dibuje después
+        
+        // Calcular las dimensiones y posición para que la imagen cubra toda la célula
+        const diameter = cell.radius * 2;
+        const imgX = cell.x - cell.radius;
+        const imgY = cell.y - cell.radius;
+        
+        // Dibujar la imagen de la skin
+        graph.drawImage(skinImages[skinId], imgX, imgY, diameter, diameter);
+        
+        graph.restore(); // Restaurar el estado del canvas
+        
+        // Dibujar el borde de la célula
+        graph.strokeStyle = cell.borderColor;
+        graph.lineWidth = 6;
+        graph.beginPath();
+        graph.arc(cell.x, cell.y, cell.radius, 0, 2 * Math.PI);
+        graph.stroke();
+    } else {
+        // Fallback: dibujar con color si la imagen no está cargada
+        console.log(`[SKIN_DEBUG] Usando fallback de color para célula ${cell.name} (skinId: ${skinId})`);
+        graph.fillStyle = cell.color;
+        graph.strokeStyle = cell.borderColor;
+        graph.lineWidth = 6;
+        graph.beginPath();
+        graph.arc(cell.x, cell.y, cell.radius, 0, 2 * Math.PI);
+        graph.closePath();
+        graph.fill();
+        graph.stroke();
+    }
 }
 
 const drawFood = (position, food, graph) => {
@@ -177,8 +252,13 @@ const drawCells = (cells, playerConfig, toggleMassState, borders, graph) => {
             // Asssemble the cell from lines
             drawCellWithLines(cell, borders, graph);
         } else {
-            // Border corrections are not needed, the cell can be drawn as a circle
-            drawRoundObject(cell, cell.radius, graph);
+            // Dibujar célula con skin si está disponible, sino con color
+            if (cell.skinId && skinImagesLoaded[cell.skinId]) {
+                drawCellWithSkin(cell, graph);
+            } else {
+                // Border corrections are not needed, the cell can be drawn as a circle
+                drawRoundObject(cell, cell.radius, graph);
+            }
         }
         
         // Restaurar sombra

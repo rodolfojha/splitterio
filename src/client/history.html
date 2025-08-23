@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Historial - Splitta.io</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body {
+      background: #0f1115;
+      min-height: 100vh;
+      color: #e5e7eb;
+    }
+    .card {
+      background: rgba(255, 255, 255, 0.03);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+    table th, table td {
+      padding: 0.75rem 0.5rem;
+    }
+    table thead {
+      background: rgba(255, 255, 255, 0.02);
+    }
+  </style>
+</head>
+<body class="font-sans text-gray-200">
+  <div class="max-w-5xl mx-auto px-4 py-10">
+
+    <!-- Header -->
+    <div class="text-center mb-10">
+      <h1 class="text-3xl font-semibold tracking-tight">📊 Historial de Partidas</h1>
+      <p class="text-sm text-gray-400 mt-1">Rendimiento total en Splitta.io</p>
+      <a href="/" class="inline-block mt-5 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium py-2.5 px-5 rounded-full transition">
+        ← Volver al Juego
+      </a>
+    </div>
+
+    <!-- Estadísticas -->
+    <div id="statsContainer" class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-10"></div>
+
+    <!-- Cargando -->
+    <div id="loading" class="text-center py-8">
+      <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-gray-300"></div>
+      <p class="mt-3 text-gray-400 text-sm">Cargando historial...</p>
+    </div>
+
+    <!-- Error -->
+    <div id="error" class="hidden card rounded-xl p-6 text-center">
+      <p class="text-red-400 mb-3">Error al cargar el historial</p>
+      <button onclick="loadHistory()" class="bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium py-2 px-5 rounded-full">
+        Reintentar
+      </button>
+    </div>
+
+    <!-- Historial -->
+    <div id="historyContainer" class="hidden">
+      <div class="card rounded-xl p-6">
+        <h2 class="text-xl font-medium mb-4">🎮 Tus Partidas</h2>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm border-collapse">
+            <thead>
+              <tr class="text-gray-400 text-xs uppercase tracking-wide">
+                <th class="text-left">Fecha</th>
+                <th class="text-left">Apuesta</th>
+                <th class="text-left">Final</th>
+                <th class="text-left">Devuelto</th>
+                <th class="text-left">Resultado</th>
+                <th class="text-left">Duración</th>
+                <th class="text-left">Masa Máx.</th>
+                <th class="text-left">Motivo</th>
+              </tr>
+            </thead>
+            <tbody id="historyTable" class="divide-y divide-gray-800">
+              <!-- Contenido dinámico -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    async function loadHistory() {
+      const loading = document.getElementById('loading');
+      const error = document.getElementById('error');
+      const historyContainer = document.getElementById('historyContainer');
+      
+      loading.classList.remove('hidden');
+      error.classList.add('hidden');
+      historyContainer.classList.add('hidden');
+      
+      try {
+        const response = await fetch('/api/game-history');
+        if (!response.ok) {
+          if (response.status === 401) {
+            window.location.href = '/?login=required';
+            return;
+          }
+          throw new Error('Error al cargar historial');
+        }
+        
+        const data = await response.json();
+        loading.classList.add('hidden');
+        
+        if (data.success) {
+          displayStats(data.stats);
+          displayHistory(data.history);
+          historyContainer.classList.remove('hidden');
+        } else {
+          throw new Error(data.error || 'Error desconocido');
+        }
+      } catch (err) {
+        loading.classList.add('hidden');
+        error.classList.remove('hidden');
+      }
+    }
+
+    function displayStats(stats) {
+      const statsContainer = document.getElementById('statsContainer');
+      const winRate = stats.totalGames > 0 ? ((stats.wins / stats.totalGames) * 100).toFixed(1) : 0;
+
+      statsContainer.innerHTML = `
+        <div class="card rounded-xl p-5 text-center">
+          <div class="text-xl font-semibold text-blue-400">${stats.totalGames}</div>
+          <div class="text-xs text-gray-400 mt-1">Partidas Jugadas</div>
+        </div>
+        <div class="card rounded-xl p-5 text-center">
+          <div class="text-xl font-semibold text-green-400">${winRate}%</div>
+          <div class="text-xs text-gray-400 mt-1">Tasa de Victoria</div>
+        </div>
+        <div class="card rounded-xl p-5 text-center">
+          <div class="text-xl font-semibold text-yellow-400">${stats.maxMass}</div>
+          <div class="text-xs text-gray-400 mt-1">Masa Máxima</div>
+        </div>
+      `;
+    }
+
+    function displayHistory(history) {
+      const historyTable = document.getElementById('historyTable');
+      
+      if (history.length === 0) {
+        historyTable.innerHTML = `
+          <tr>
+            <td colspan="8" class="text-center py-8 text-gray-500">
+              No tienes partidas registradas aún
+            </td>
+          </tr>
+        `;
+        return;
+      }
+      
+      historyTable.innerHTML = history.map(game => {
+        const date = new Date(game.created_at).toLocaleDateString('es-ES', {
+          day: '2-digit', month: '2-digit', year: '2-digit',
+          hour: '2-digit', minute: '2-digit'
+        });
+
+        const duration = formatDuration(game.duration_seconds);
+        const resultText = {
+          win: '<span class="text-green-400">Ganancia</span>',
+          loss: '<span class="text-red-400">Pérdida</span>',
+          tie: '<span class="text-gray-400">Empate</span>'
+        }[game.result_type] || '<span class="text-gray-500">Desconocido</span>';
+
+        const disconnectReason = {
+          manual_cashout: 'Cashout Manual',
+          disconnect: 'Desconexión',
+          auto_cashout: 'Auto Cashout',
+          kicked: 'Expulsado'
+        }[game.disconnect_reason] || '—';
+
+        const safeNumber = (val, decimals=2) =>
+          (val == null || isNaN(val)) ? '0.00' : parseFloat(val).toFixed(decimals);
+
+        return `
+          <tr class="hover:bg-white/5 transition">
+            <td>${date}</td>
+            <td>$${safeNumber(game.bet_amount)}</td>
+            <td>$${safeNumber(game.final_amount)}</td>
+            <td>$${safeNumber(game.returned_amount)}</td>
+            <td>${resultText}</td>
+            <td>${duration}</td>
+            <td>${Math.round(game.max_mass_reached || 0)}</td>
+            <td class="text-xs text-gray-400">${disconnectReason}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function formatDuration(seconds) {
+      if (!seconds || isNaN(seconds)) return '0s';
+      const m = Math.floor(seconds / 60);
+      const s = seconds % 60;
+      return m > 0 ? `${m}m ${s}s` : `${s}s`;
+    }
+
+    document.addEventListener('DOMContentLoaded', loadHistory);
+  </script>
+</body>
+</html>

@@ -26,7 +26,7 @@ module.exports = {
     slowBase: 4.5,
     logChat: 0,
     networkUpdateFactor: 40,
-    maxHeartbeatInterval: 5000,
+    maxHeartbeatInterval: 30000, // Aumentado de 5 segundos a 30 segundos para ser más tolerante
     foodUniformDisposition: true,
     newPlayerInitialPosition: "farthest",
     massLossRate: 1,

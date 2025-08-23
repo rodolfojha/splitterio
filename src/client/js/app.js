@@ -267,6 +267,41 @@ function showLoginModal() {
     }
 }
 
+// Función para mostrar notificación de pago exitoso
+function showPaymentSuccessNotification() {
+    // Crear notificación
+    const notification = document.createElement('div');
+    notification.className = 'fixed top-4 right-4 bg-green-500 text-white px-6 py-4 rounded-lg shadow-lg z-50 transform transition-all duration-300';
+    notification.style.transform = 'translateX(100%)';
+    notification.innerHTML = `
+        <div class="flex items-center">
+            <span class="text-2xl mr-3">🎉</span>
+            <div>
+                <h4 class="font-bold">Payment Successful!</h4>
+                <p class="text-sm">Your balance has been updated.</p>
+            </div>
+        </div>
+    `;
+    
+    // Agregar al DOM
+    document.body.appendChild(notification);
+    
+    // Animar entrada
+    setTimeout(() => {
+        notification.style.transform = 'translateX(0)';
+    }, 100);
+    
+    // Remover después de 5 segundos
+    setTimeout(() => {
+        notification.style.transform = 'translateX(100%)';
+        setTimeout(() => {
+            if (notification.parentNode) {
+                notification.parentNode.removeChild(notification);
+            }
+        }, 300);
+    }, 5000);
+}
+
 function hideLoginModal() {
     document.getElementById('loginModal').style.display = 'none';
     document.getElementById('loginError').textContent = '';
@@ -512,6 +547,24 @@ function setupAuthEventListeners() {
         navLogoutBtn.onclick = logoutUser;
         console.log('Botón de logout configurado');
     }
+
+    // Configurar botón Add Funds
+    const addFundsBtn = document.getElementById('addFundsBtn');
+    if (addFundsBtn) {
+        addFundsBtn.onclick = function() {
+            window.location.href = '/add-funds';
+        };
+        console.log('Botón de Add Funds configurado');
+    }
+    
+    // Configurar botón My Payments
+    const myPaymentsBtn = document.getElementById('myPaymentsBtn');
+    if (myPaymentsBtn) {
+        myPaymentsBtn.onclick = function() {
+            window.location.href = '/my-payments';
+        };
+        console.log('Botón de My Payments configurado');
+    }
     
     if (closeLoginModal) {
         closeLoginModal.onclick = hideLoginModal;
@@ -569,6 +622,18 @@ document.addEventListener('DOMContentLoaded', function() {
         // Limpiar la URL
         window.history.replaceState({}, document.title, window.location.pathname);
         // Verificar estado de autenticación
+        setTimeout(() => {
+            checkAuthStatus();
+        }, 1000);
+    }
+    
+    if (success === 'payment') {
+        console.log('Pago completado exitosamente');
+        // Limpiar la URL
+        window.history.replaceState({}, document.title, window.location.pathname);
+        // Mostrar notificación de éxito
+        showPaymentSuccessNotification();
+        // Verificar estado de autenticación para actualizar balance
         setTimeout(() => {
             checkAuthStatus();
         }, 1000);
@@ -831,13 +896,20 @@ function handleDisconnect() {
         }
         // Para usuarios de Google OAuth, usamos cookies de sesión (no necesitamos Authorization header)
 
+        // Notificar al servidor que es una desconexión voluntaria
+        if (socket) {
+            socket.emit('voluntaryDisconnect');
+        }
+        
         // Llamar a la API de cashout
         fetch('/api/voluntaryDisconnect', {
             method: 'POST',
             headers: headers,
             body: JSON.stringify({ 
                 betAmount: global.betAmount,
-                originalBetAmount: originalBet
+                originalBetAmount: originalBet,
+                maxMass: global.player ? global.player.massTotal : 0,
+                duration: gameDuration
             }),
             credentials: 'include' // Incluir cookies para sesiones de Google OAuth
         })
@@ -954,15 +1026,60 @@ function setupSocket(socket) {
         global.player = player;
         window.chat.player = player;
         
+        // Obtener la skin seleccionada
+        let selectedSkinData = null;
+        if (window.getSelectedSkinData) {
+            selectedSkinData = window.getSelectedSkinData();
+            console.log(`[SKIN_CONNECTION] Datos de skin obtenidos:`, selectedSkinData);
+        } else {
+            console.log(`[SKIN_CONNECTION] Función getSelectedSkinData no disponible`);
+        }
+        
         // Si hay una apuesta activa, enviar los datos del jugador con la apuesta
         if (global.betAmount && global.betAmount > 0) {
-            socket.emit('gotit', {
+            const playerData = {
                 name: currentUser.username,
                 userId: currentUser.id,
                 betAmount: global.betAmount
-            });
+            };
+            
+            // Agregar información de la skin si está disponible
+            if (selectedSkinData) {
+                playerData.skinId = selectedSkinData.skinId;
+                playerData.skinName = selectedSkinData.skinName;
+                playerData.skinHue = selectedSkinData.skinHue;
+                console.log(`[SKIN_CONNECTION] Enviando datos de skin al servidor (con apuesta):`, {
+                    skinId: selectedSkinData.skinId,
+                    skinName: selectedSkinData.skinName,
+                    skinHue: selectedSkinData.skinHue
+                });
+            } else {
+                console.log(`[SKIN_CONNECTION] No hay datos de skin para enviar (con apuesta)`);
+            }
+            
+            socket.emit('gotit', playerData);
         } else {
-            socket.emit('gotit', player);
+            const playerData = {
+                name: player.name,
+                screenWidth: player.screenWidth,
+                screenHeight: player.screenHeight
+            };
+            
+            // Agregar información de la skin si está disponible
+            if (selectedSkinData) {
+                playerData.skinId = selectedSkinData.skinId;
+                playerData.skinName = selectedSkinData.skinName;
+                playerData.skinHue = selectedSkinData.skinHue;
+                console.log(`[SKIN_CONNECTION] Enviando datos de skin al servidor (sin apuesta):`, {
+                    skinId: selectedSkinData.skinId,
+                    skinName: selectedSkinData.skinName,
+                    skinHue: selectedSkinData.skinHue
+                });
+            } else {
+                console.log(`[SKIN_CONNECTION] No hay datos de skin para enviar (sin apuesta)`);
+            }
+            
+            socket.emit('gotit', playerData);
         }
         
         global.gameStart = Date.now();
@@ -1037,10 +1154,25 @@ function setupSocket(socket) {
         
         // Mostrar notificación visual temporal
         showCombatNotification(data.message);
+    });
+
+    // Handle player skin change notification
+    socket.on('playerSkinChanged', (data) => {
+        console.log('[SKIN_CHANGE] Jugador cambió de skin:', data);
         
-        // Mostrar flecha indicadora hacia la célula dividida
-        if (data.cells && data.cells.length > 0) {
-            updatePlayerArrow('combat-division', 'Célula Dividida', data.cells[0].x, data.cells[0].y);
+        // Mostrar notificación en el chat
+        window.chat.addSystemLine('{SKIN} <b>' + data.playerName + '</b> cambió a skin: <b>' + data.skinName + '</b>');
+        
+        // Actualizar el hue y skinId del jugador en el cliente si es necesario
+        if (window.users) {
+            for (let user of window.users) {
+                if (user.id === data.playerId) {
+                    user.hue = data.hue;
+                    user.skinId = data.skinId;
+                    console.log(`[SKIN] Actualizado hue de ${user.name} a ${data.hue} y skinId a ${data.skinId}`);
+                    break;
+                }
+            }
         }
     });
 
@@ -1629,8 +1761,14 @@ function gameLoop() {
                     gameMoney: users[i].cells[j].gameMoney || 0,
                     isProtected: users[i].cells[j].isProtected || false,
                     protectionTimeLeft: users[i].cells[j].protectionTimeLeft || 0,
-                    hasShield: users[i].cells[j].hasShield || false
+                    hasShield: users[i].cells[j].hasShield || false,
+                    skinId: users[i].skinId || users[i].cells[j].skinId || 1 // Agregar skinId
                 };
+                
+                // Debug log para rastrear skinId
+                if (users[i].name === global.playerName) {
+                    console.log(`[CELL_DEBUG] Célula de ${users[i].name}: skinId=${cellData.skinId}, users[i].skinId=${users[i].skinId}, cell.skinId=${users[i].cells[j].skinId}`);
+                }
                 
 
                 

@@ -103,6 +103,67 @@ const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE | sqlite3.OPEN_CR
           console.log("Created sessions table");
         }
       });
+
+      // Nueva tabla para historial de partidas
+      db.run(`CREATE TABLE IF NOT EXISTS game_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        username TEXT,
+        bet_amount REAL,
+        final_amount REAL,
+        returned_amount REAL,
+        result_type TEXT, -- 'win', 'loss', 'tie'
+        commission_applied REAL DEFAULT 0,
+        start_time DATETIME,
+        end_time DATETIME,
+        duration_seconds INTEGER,
+        max_mass_reached REAL DEFAULT 0,
+        disconnect_reason TEXT, -- 'manual_cashout', 'disconnect', 'auto_cashout', 'kicked'
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users (id)
+      )`, (err) => {
+        if (err) {
+          console.error(err);
+        }
+        else {
+          console.log("Created game_history table");
+        }
+      });
+
+      // Nueva tabla para pagos con NOWPayments (nueva implementación)
+      db.run(`CREATE TABLE IF NOT EXISTS payments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        payment_id TEXT UNIQUE,
+        amount REAL,
+        currency TEXT DEFAULT 'USD',
+        pay_currency TEXT,
+        pay_amount REAL,
+        pay_address TEXT,
+        order_id TEXT,
+        status TEXT DEFAULT 'pending', -- 'waiting', 'confirming', 'confirmed', 'finished', 'failed', 'expired'
+        qr_code TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME,
+        FOREIGN KEY (user_id) REFERENCES users (id)
+      )`, (err) => {
+        if (err) {
+          console.error(err);
+        }
+        else {
+          console.log("Created payments table (new implementation)");
+        }
+      });
+
+      // Agregar columna qr_code si no existe
+      db.run(`ALTER TABLE payments ADD COLUMN qr_code TEXT`, (err) => {
+        if (err && !err.message.includes('duplicate column name')) {
+          console.error('Error adding qr_code column:', err);
+        } else {
+          console.log("Added qr_code column to payments table");
+        }
+      });
+
     });
   }
 });

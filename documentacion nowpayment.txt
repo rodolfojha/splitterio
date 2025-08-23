@@ -1,0 +1,2643 @@
+
+Public
+ENVIRONMENT
+No Environment
+LAYOUT
+Single Column
+LANGUAGE
+cURL - cURL
+NOWPayments API
+Introduction
+Authentication
+Standard e-commerce flow for NOWPayments API:
+API Documentation
+Auth and API status
+Currencies
+GET
+Get available currencies
+GET
+Get available currencies (2nd method)
+GET
+Get available checked currencies
+Payments
+GET
+Get the minimum payment amount
+POST
+Create invoice
+POST
+Create payment
+POST
+Create payment by invoice
+POST
+Get/Update payment estimate
+GET
+Get estimated price
+GET
+Get payment status
+GET
+Get list of payments
+Mass payouts
+Conversions
+Custody
+Fiat payouts (coming soon)
+Recurring Payments API (Email Subscriptions feature)
+Use cases
+NOWPayments API
+NOWPayments is a non-custodial cryptocurrency payment processing platform. Accept payments in a wide range of cryptos and get them instantly converted into a coin of your choice and sent to your wallet. Keeping it simple – no excess.
+
+Authentication
+To use the NOWPayments API you should do the following:
+
+Sign up at nowpayments.io;
+Specify your payout wallet;
+Generate an API key and IPN secret key;
+Please note: IPN secret key may be shown fully only upon creation. Make sure to save it after generation.
+Standard e-commerce flow for NOWPayments API:
+API - Check API availability with the "GET API status" method. If required, check the list of available payment currencies with the "GET available currencies" method;
+UI - Ask a customer to select item/items for purchase to determine the total sum;
+UI - Ask a customer to select payment currency;
+API - Get the minimum payment amount for the selected currency pair (payment currency to your payout wallet currency) with the "GET Minimum payment amount" method;
+API - Get the estimate of the total amount in crypto with "GET Estimated price" and check that it is larger than the minimum payment amount from step 4;
+API - Call the "POST Create payment" method to create a payment and get the deposit address (in our example, the generated BTC wallet address is returned from this method);
+UI - Ask a customer to send the payment to the generated deposit address (in our example, user has to send BTC coins);
+UI - A customer sends coins, NOWPayments processes and exchanges them (if required), and settles the payment to your payout wallet (in our example, to your ETH address);
+API - You can get the payment status either via our IPN callbacks or manually, using "GET Payment Status" and display it to a customer so that they know when their payment has been processed;
+API - you call the list of payments made to your account via the "GET List of payments" method;
+Additionally, you can see all of this information in your Account on NOWPayments website;
+Alternative flow
+API - Check API availability with the "GET API status" method. If required, check the list of available payment currencies with the "GET available currencies" method;
+UI - Ask a customer to select item/items for purchase to determine the total sum;
+UI - Ask a customer to select payment currency;
+API - Get the minimum payment amount for the selected currency pair (payment currency to your payout wallet currency) with the "GET Minimum payment amount" method;
+API - Get the estimate of the total amount in crypto with "GET Estimated price" and check that it is larger than the minimum payment amount from step 4;
+API - Call the "POST Create Invoice method to create an invoice. Set "success_url" - parameter so that the user will be redirected to your website after successful payment;
+UI - display the invoice url or redirect the user to the generated link;
+NOWPayments - the customer completes the payment and is redirected back to your website (only if "success_url" parameter is configured correctly!);
+API - You can get the payment status either via our IPN callbacks or manually, using "GET Payment Status" and display it to a customer so that they know when their payment has been processed;
+API - you call the list of payments made to your account via the "GET List of payments" method;
+Additionally, you can see all of this information in your Account on NOWPayments website;
+API Documentation
+Instant Payments Notifications
+IPN (Instant payment notifications, or callbacks) are used to notify you when transaction status is changed.
+To use them, you should complete the following steps:
+
+Generate and save the IPN Secret key in Payment Settings tab at the Dashboard;
+Insert your URL address where you want to get callbacks in create_payment request. The parameter name is ipn_callback_url. You will receive payment updates (statuses) to this URL address.**
+Please, take note that we cannot send callbacks to your localhost unless it has dedicated IP address.**
+important Please make sure that firewall software on your server (i.e. Cloudflare) does allow our requests to come through. It may be required to whitelist our IP addresses on your side to get it. The list of these IP addresses can be requested at partners@nowpayments.io;
+You will receive all the parameters at the URL address you specified in (2) by POST request;
+The POST request will contain the x-nowpayments-sig parameter in the header.
+The body of the request is similiar to a get payment status response body.
+You can see examples in "Webhook examples" section.
+Sort the POST request by keys and convert the it to string using
+JSON.stringify (params, Object.keys(params).sort()) or the same function;
+Sign a string with an IPN-secret key with HMAC and sha-512 key;
+Compare the signed string from the previous step with the x-nowpayments-sig , which is stored in the header of the callback request;
+If these strings are similar it is a success.
+Otherwise, contact us on support@nowpayments.io to solve the problem.
+Example of creating a signed string at Node.JS
+
+View More
+Plain Text
+function sortObject(obj) {
+  return Object.keys(obj).sort().reduce(
+    (result, key) => {
+      result[key] = (obj[key] && typeof obj[key] === 'object') ? sortObject(obj[key]) : obj[key]
+      return result
+    },
+    {}
+  )
+}
+
+const hmac = crypto.createHmac('sha512', notificationsKey);
+hmac.update(JSON.stringify(sortObject(params)));
+const signature = hmac.digest('hex');
+Example of comparing signed strings in PHP
+
+View More
+Plain Text
+function tksort(&$array)
+  {
+  ksort($array);
+  foreach(array_keys($array) as $k)
+    {
+    if(gettype($array[$k])=="array")
+      {
+      tksort($array[$k]);
+      }
+    }
+  }
+function check_ipn_request_is_valid()
+    {
+        $error_msg = "Unknown error";
+        $auth_ok = false;
+        $request_data = null;
+        if (isset($_SERVER['HTTP_X_NOWPAYMENTS_SIG']) && !empty($_SERVER['HTTP_X_NOWPAYMENTS_SIG'])) {
+            $recived_hmac = $_SERVER['HTTP_X_NOWPAYMENTS_SIG'];
+            $request_json = file_get_contents('php://input');
+            $request_data = json_decode($request_json, true);
+            tksort($request_data);
+            $sorted_request_json = json_encode($request_data, JSON_UNESCAPED_SLASHES);
+            if ($request_json !== false && !empty($request_json)) {
+                $hmac = hash_hmac("sha512", $sorted_request_json, trim($this->ipn_secret));
+                if ($hmac == $recived_hmac) {
+                    $auth_ok = true;
+                } else {
+                    $error_msg = 'HMAC signature does not match';
+                }
+            } else {
+                $error_msg = 'Error reading POST data';
+            }
+        } else {
+            $error_msg = 'No HMAC signature sent.';
+        }
+    }
+Example comparing signed signatures in Python
+
+View More
+python
+import json 
+import hmac 
+import hashlib
+def np_signature_check(np_secret_key, np_x_signature, message):
+    sorted_msg = json.dumps(message, separators=(',', ':'), sort_keys=True)
+    digest = hmac.new(
+    str(np_secret_key).encode(), 
+    f'{sorted_msg}'.encode(),
+    hashlib.sha512)
+    signature = digest.hexdigest()
+    if signature == np_x_signature:
+        return
+    else:
+        print("HMAC signature does not match")
+Usually you will get a notification per each step of processing payments, withdrawals, or transfers, related to custodial recurring payments.
+
+The webhook is being sent automatically once the transaction status is changed.
+
+You also can request an additional IPN notification using your NOWPayments dashboard.
+
+Please note that you should set up an endpoint which can receive POST requests from our server.
+
+Before going production we strongly recommend to test the endpoint by making a test request to it by yourself to ensure it's working properly.
+
+Recurrent payment notifications
+If an error is detected, the payment will be flagged and will receive additional recurrent notifications (number of recurrent notifications can be changed in your Payment Settings-> Instant Payment Notifications).
+
+If an error is received again during the payment processing, recurrent notifications will be initiated again.
+
+Example: "Timeout" is set to 1 minute and "Number of recurrent notifications" is set to 3.
+
+Once an error is detected, you will receive 3 notifications at 1 minute intervals.
+
+Webhooks Examples:
+Payments:
+
+View More
+json
+{
+"payment_id":123456789,
+"parent_payment_id":987654321,
+"invoice_id":null,
+"payment_status":"finished",
+"pay_address":"address",
+"payin_extra_id":null,
+"price_amount":1,
+"price_currency":"usd",
+"pay_amount":15,
+"actually_paid":15,
+"actually_paid_at_fiat":0,
+"pay_currency":"trx",
+"order_id":null,
+"order_description":null,
+"purchase_id":"123456789",
+"outcome_amount":14.8106,
+"outcome_currency":"trx",
+"payment_extra_ids":null
+"fee": {
+"currency":"btc",
+"depositFee":0.09853637216235617,
+"withdrawalFee":0,
+"serviceFee":0
+}
+}
+Withdrawals:
+
+View More
+json
+{
+"id":"123456789",
+"batch_withdrawal_id":"987654321",
+"status":"CREATING",
+"error":null,
+"currency":"usdttrc20",
+"amount":"50",
+"address":"address",
+"fee":null,
+"extra_id":null,
+"hash":null,
+"ipn_callback_url":"callback_url",
+"created_at":"2023-07-27T15:29:40.803Z",
+"requested_at":null,
+"updated_at":null
+}
+Custodial recurring payments:
+
+json
+{
+"id":"1234567890",
+"status":"FINISHED",
+"currency":"trx",
+"amount":"12.171365564140688",
+"ipn_callback_url":"callback_url",
+"created_at":"2023-07-26T14:20:11.531Z",
+"updated_at":"2023-07-26T14:20:21.079Z"
+}
+Several payments for one order
+If you want to create several payments for one order, you should do the following:
+
+Create a payment for the full order amount;
+Save "purchase_id" which will be in "create_payment" response;
+Create next payment or payments with this "purchase_id" in "create_payment" request;
+Only works for partially_paid payments;
+It may be useful if you want to give your customers an opportunity to pay a full order with several payments, for example, one part in BTC and one part in ETH. Also, if your customer accidentally paid you only part of a full amount, you can ask them to make another payment.
+
+Packages
+Please find our out-of-the box packages for easy integration below:
+
+JavaScript package
+
+[PHP package]
+(https://packagist.org/packages/nowpayments/nowpayments-api-php)
+
+More coming soon!
+
+Payments
+POST
+Create recurring payments
+https://api.nowpayments.io/v1/subscriptions
+This method creates a recurring charge from a user account.
+
+The funds are transferred from a user account to your account when a new payment is generated or a paid period is coming to an end. The amount depends on the plan a customer chooses.
+If you specify a particular currency your customer should pay in, and their account have enough funds stored in it, the amount will be charged automatically. In case a customer has other currency on their account, the equivalent sum will be charged.
+
+Here is the list of available statuses:
+
+WAITING_PAY - the payment is waiting for user's deposit;
+PAID - the payment is completed;
+PARTIALLY_PAID - the payment is completed, but the final amount is less than required for payment to be fully paid;
+EXPIRED - is being assigned to unpaid payment after 7 days of waiting;
+Please note:
+
+Subscribtion amount will be deducted from your sub-user balance in any currency available; i.e. if your subscribtion plan is set up for 100USDTTRC20/month, and your customer has 100USDCMATIC on balance, USDCMATIC will be deducted and transferred to your custody.
+
+You can convert it manually using our conversions endpoints through api or in your Custody dashboard.
+
+HEADERS
+Authorization
+Bearer {{token}}
+
+(Required) Your authorization token
+
+x-api-key
+{{api-key}}
+
+(Required) Your NOWPayments API key
+
+Content-Type
+application/json
+
+(Required) Your payload has to be JSON object
+
+Body
+raw (json)
+json
+{
+    "subscription_plan_id": 76215585,
+    "sub_partner_id": 111111,
+    "email": "your email"
+}
+Example Request
+200
+View More
+curl
+curl --location 'https://api.nowpayments.io/v1/subscriptions' \
+--header 'Authorization: Bearer {{token}}' \
+--header 'x-api-key: {{api-key}}' \
+--header 'Content-Type: application/json' \
+--data '{
+    "subscription_plan_id": 76215585,
+    "sub_partner_id": 111111
+}'
+200 OK
+Example Response
+Body
+Headers (0)
+View More
+Text
+{
+  "result": {
+    "id": "1515573197",
+    "subscription_plan_id": "76215585",
+    "is_active": false,
+    "status": "WAITING_PAY",
+    "expire_date": "2022-10-09T22:15:50.808Z",
+    "subscriber": {
+      "sub_partner_id": "111111"
+    },
+    "created_at": "2022-10-09T22:15:50.808Z",
+    "updated_at": "2022-10-09T22:15:50.808Z"
+  }
+}
+GET
+Get user balance
+https://api.nowpayments.io/v1/sub-partner/balance/:id
+This request can be made only from a whitelisted IP.
+If IP whitelisting is disabled, this request can be made by any user that has an API key.
+
+HEADERS
+x-api-key
+{{api-key}}
+
+(Required) Your NOWPayments API key
+
+PATH VARIABLES
+id
+ID of sub-user for balance request
+
+Example Request
+200
+View More
+curl
+curl --location 'https://api.nowpayments.io/v1/sub-partner/balance/111394288' \
+--header 'x-api-key: {{api-key}}'
+200 OK
+Example Response
+Body
+Headers (0)
+View More
+Text
+{
+  "result": {
+    "subPartnerId": "111394288",
+    "balances": {
+      "usddtrc20": {
+        "amount": 0.7,
+        "pendingAmount": 0
+      },
+      "usdtbsc": {
+        "amount": 1.0001341847350678,
+        "pendingAmount": 0
+      }
+    }
+  }
+}
+GET
+Get users
+https://api.nowpayments.io/v1/sub-partner?id=111&offset=1&limit=10&order=DESC
+This method returns the entire list of your users.
+
+AUTHORIZATION
+Bearer Token
+Token
+{{token}}
+
+HEADERS
+Authorization
+Bearer {{token}}
+
+(Required) Your authorization token
+
+PARAMS
+id
+111
+
+int or array of int (optional)
+
+offset
+1
+
+(optional) default 0
+
+limit
+10
+
+(optional) default 10
+
+order
+DESC
+
+ASC / DESC (optional) default ASC
+
+Example Request
+200
+View More
+curl
+curl --location 'https://api.nowpayments.io/v1/sub-partner?id=111&offset=0&limit=10&order=DESC' \
+--header 'Authorization: Bearer {{token}}'
+Example Response
+Body
+Headers (0)
+View More
+Text
+{
+  "result": [
+    {
+      "id": "111394288",
+      "name": "test",
+      "created_at": "2022-10-06T16:42:47.352Z",
+      "updated_at": "2022-10-06T16:42:47.352Z"
+    },
+    {
+      "id": "1515573197",
+      "name": "test1",
+      "created_at": "2022-10-09T21:56:33.754Z",
+      "updated_at": "2022-10-09T21:56:33.754Z"
+    }
+  ],
+  "count": 2
+}
+GET
+Get all transfers
+https://api.nowpayments.io/v1/sub-partner/transfers?id=111&status=CREATED&limit=10&offset=1&order=ASC
+Returns the entire list of transfers created by your users.
+
+The list of available statuses:
+
+CREATED - the transfer is being created;
+WAITING - the transfer is waiting for payment;
+FINISHED - the transfer is completed;
+REJECTED - for some reason, transaction failed;
+HEADERS
+Authorization
+Bearer {{token}}
+
+(Required) Your authorization token
+
+PARAMS
+id
+111
+
+int or array of int (optional)
+
+status
+CREATED
+
+string or array of string "WAITING"/"CREATED"/"FINISHED"/"REJECTED" (optional)
+
+limit
+10
+
+(optional) default 10
+
+offset
+1
+
+(optional) default 0
+
+order
+ASC
+
+ASC / DESC (optional) default ASC
+
+Example Request
+200
+View More
+curl
+curl --location -g 'https://api.nowpayments.io{/v1/sub-partner/transfers?status=FINISHED&limit=10&offset=0&order=ASC' \
+--header 'Authorization: Bearer {{token}}'
+200 OK
+Example Response
+Body
+Headers (0)
+View More
+Text
+{
+  "result": [
+    {
+      "id": "111394288",
+      "from_sub_id": "5209391548",
+      "to_sub_id": "111394288",
+      "status": "FINISHED",
+      "created_at": "2022-10-09T18:53:21.975Z",
+      "updated_at": "2022-10-09T18:55:00.696Z",
+      "amount": "1",
+      "currency": "usdtbsc"
+    },
+    {
+      "id": "148427051",
+      "from_sub_id": "111394288",
+      "to_sub_id": "5209391548",
+      "status": "FINISHED",
+      "created_at": "2022-10-09T19:08:32.440Z",
+      "updated_at": "2022-10-09T19:10:01.209Z",
+      "amount": "1",
+      "currency": "usdtbsc"
+    },
+    {
+      "id": "1631380403",
+      "from_sub_id": "5209391548",
+      "to_sub_id": "111394288",
+      "status": "FINISHED",
+      "created_at": "2022-10-09T21:19:51.936Z",
+      "updated_at": "2022-10-09T21:21:00.671Z",
+      "amount": "2",
+      "currency": "usdtbsc"
+    },
+    {
+      "id": "1167886259",
+      "from_sub_id": "5209391548",
+      "to_sub_id": "111394288",
+      "status": "FINISHED",
+      "created_at": "2022-10-09T21:22:17.125Z",
+      "updated_at": "2022-10-09T21:24:00.662Z",
+      "amount": "2",
+      "currency": "usdtbsc"
+    },
+    {
+      "id": "48471014",
+      "from_sub_id": "111394288",
+      "to_sub_id": "5209391548",
+      "status": "FINISHED",
+      "created_at": "2022-10-09T21:25:29.231Z",
+      "updated_at": "2022-10-09T21:27:00.676Z",
+      "amount": "1",
+      "currency": "usdtbsc"
+    },
+    {
+      "id": "1304149238",
+      "from_sub_id": "111394288",
+      "to_sub_id": "5209391548",
+      "status": "FINISHED",
+      "created_at": "2022-10-09T21:54:57.713Z",
+      "updated_at": "2022-10-09T21:56:01.056Z",
+      "amount": "1",
+      "currency": "usdtbsc"
+    },
+    {
+      "id": "327209161",
+      "from_sub_id": "111394288",
+      "to_sub_id": "1515573197",
+      "status": "FINISHED",
+      "created_at": "2022-10-09T22:09:02.181Z",
+      "updated_at": "2022-10-09T22:10:01.853Z",
+      "amount": "1",
+      "currency": "usdtbsc"
+    }
+  ],
+  "count": 7
+}
+POST
+Deposit from your master account
+https://api.nowpayments.io/v1/sub-partner/deposit
+This is a method for transferring funds from your master account to a user's one.
+The actual information about the transfer's status can be obtained via Get transfer method.
+
+The list of available statuses:
+
+CREATED - the transfer is being created;
+WAITING - the transfer is waiting for payment;
+FINISHED - the transfer is completed;
+REJECTED - for some reason, transaction failed;
+HEADERS
+Authorization
+Bearer {{token}}
+
+(Required) Your authorization token
+
+Content-Type
+application/json
+
+(Required) Your payload has to be JSON object
+
+Body
+raw (json)
+json
+{
+    "currency": "trx",
+    "amount": 0.3,
+    "sub_partner_id": "1631380403"
+}
+Example Request
+200
+View More
+curl
+curl --location 'https://api.nowpayments.io/v1/sub-partner/deposit' \
+--header 'Authorization: Bearer {{token}}' \
+--header 'Content-Type: application/json' \
+--data '{
+    "currency": "usddtrc20",
+    "amount": 0.7,
+    "sub_partner_id": "111394288"
+}'
+Example Response
+Body
+Headers (0)
+View More
+Text
+{
+    "result": {
+        "id": "19649354",
+        "from_sub_id": "5209391548", //main account
+        "to_sub_id": "111394288", //sub account
+        "status": "WAITING",
+        "created_at": "2022-10-11T10:01:33.323Z",
+        "updated_at": "2022-10-11T10:01:33.323Z",
+        "amount": "0.7",
+        "currency": "usddtrc20"
+    }
+}
+POST
+Write off on your account
+https://api.nowpayments.io/v1/sub-partner/write-off
+With this method you can withdraw funds from a user's account and transfer them to your master account.
+
+The actual status of the transaction can be checked with Get transfer method.
+
+The list of available statuses:
+
+CREATED - the transfer is being created;
+WAITING - the transfer is waiting for payment;
+FINISHED - the transfer is completed;
+REJECTED - for some reason, transaction failed;
+HEADERS
+Authorization
+Bearer {{token}}
+
+(Required) Your authorization token
+
+Content-Type
+application/json
+
+(Required) Your payload has to be JSON object
+
+Body
+raw (json)
+json
+{
+    "currency": "trx",
+    "amount": 0.3,
+    "sub_partner_id": "1631380403"
+}
+Example Request
+200
+View More
+curl
+curl --location 'https://api.nowpayments.io/v1/sub-partner/write-off' \
+--header 'Authorization: Bearer {{token}}' \
+--header 'Content-Type: application/json' \
+--data '{
+    "currency": "trx",
+    "amount": 0.3,
+    "sub_partner_id": "1631380403"
+}'
+Example Response
+Body
+Headers (0)
+View More
+Text
+{
+    "result": {
+        "id": "19649354",
+        "from_sub_id": "111394288", //sub account
+        "to_sub_id": "5209391548", //main account
+        "status": "WAITING",
+        "created_at": "2022-10-11T10:01:33.323Z",
+        "updated_at": "2022-10-11T10:01:33.323Z",
+        "amount": "0.7",
+        "currency": "usddtrc20"
+    }
+}
+GET
+Get crypto currencies
+https://api.nowpayments.io/v1/fiat-payouts/crypto-currencies?provider&currency
+This endpoint shows you the list of available crypto currencies for your cashout.
+
+HEADERS
+Authorization
+Bearer *your_jwt_token*
+
+PARAMS
+provider
+currency
+Example Request
+Get crypto currencies
+View More
+curl
+curl --location 'https://api.nowpayments.io/v1/fiat-payouts/crypto-currencies' \
+--header 'Authorization: Bearer *your_jwt_token*'
+200 OK
+Example Response
+Body
+Headers (1)
+View More
+json
+{
+  "result": [
+    {
+      "provider": "transfi",
+      "currencyCode": "USDC",
+      "currencyNetwork": "eth",
+      "enabled": true
+    },
+    {
+      "provider": "transfi",
+      "currencyCode": "USDT",
+      "currencyNetwork": "btc",
+      "enabled": true
+    },
+    {
+      "provider": "transfi",
+      "currencyCode": "USDTERC20",
+      "currencyNetwork": "eth",
+      "enabled": true
+    },
+    {
+      "provider": "transfi",
+      "currencyCode": "USDTTRC20",
+      "currencyNetwork": "trx",
+      "enabled": true
+    }
+  ]
+}
+GET
+Get available payment methods
+https://api.nowpayments.io/v1/fiat-payouts/payment-methods?provider&currency
+This endpoint shows you the list of available payment methods for chosen provider and currency.
+
+HEADERS
+Authorization
+Bearer *your jwt token*
+
+PARAMS
+provider
+currency
+Example Request
+Get available payment methods
+View More
+curl
+curl --location 'https://api.nowpayments.io/v1/fiat-payouts/payment-methods?provider=null&currency=null' \
+--header 'Authorization: Bearer *your jwt token*'
+200 OK
+Example Response
+Body
+Headers (1)
+View More
+json
+{
+    "result": [
+        {
+            "name": "Bdo Network Bank",
+            "paymentCode": "ph_onb",
+            "fields": [
+                {
+                    "name": "accountNumber",
+                    "type": "String",
+                    "mandatory": true,
+                    "description": "Beneficiary account number"
+                }
+            ],
+            "provider": "transfi"
+        },
+
+        ************************
+        more options here
+        ************************
+
+                {
+            "name": "Mega Intl Comml Bank Co Ltd",
+            "paymentCode": "ph_mega",
+            "fields": [
+                {
+                    "name": "accountNumber",
+                    "type": "String",
+                    "mandatory": true,
+                    "description": "Beneficiary account number"
+                }
+            ],
+            "provider": "transfi"
+        }
+    ]
+}
+GET
+Get accounts
+https://api.nowpayments.io/v1/fiat-payouts/accounts?id&provider&currency&filter&limit&page&orderBy&sortBy&dateFrom&dateTo
+This endpoint shows you a list of already submitted accounts you've created before.
+
+You can filter the output by any of presented parameters. These are completely optional for using this endpoint.
+
+HEADERS
+Authorization
+Bearer *your jwt token*
+
+PARAMS
+id
+provider
+currency
+filter
+limit
+page
+orderBy
+sortBy
+dateFrom
+dateTo
+Example Request
+Get accounts
+View More
+curl
+curl --location 'https://api.nowpayments.io/v1/fiat-payouts/accounts' \
+--header 'Authorization: Bearer *your jwt token*'
+200 OK
+Example Response
+Body
+Headers (1)
+View More
+json
+{
+  "result": {
+    "rows": [
+      {
+        "provider": "transfi",
+        "fiatCurrencyCode": "PHP",
+        "providerAccountInfo": {
+          "currency": "PHP",
+          "displayName": "Partner {email} PHP PH AIB account",
+          "paymentCode": "ph_aib",
+          "accountNumber": "111333214444555"
+        },
+        "createdAt": "2023-10-11T14:32:44.236Z",
+        "updatedAt": "2023-10-11T14:32:44.236Z"
+      }
+    ]
+  }
+}
+POST
+Request payout
+https://api.nowpayments.io/v1/fiat-payouts
+This endpoint is meant to request the payout.
+
+Available statuses for payout:
+
+CREATING - the payout has been created and queued to be executed soon ;
+
+CONVERTING - (for any payout currency except USDTTRC20) your payout is converting to USDTTRC20;
+
+DEPOSITING - payout amount is being sent to chosen service provider for further processing ;
+
+PROCESSING - payout is being processing at this stage;
+
+FINISHED - payout has been executed;
+
+FAILED - something went wrong. Most likely you can find out what exactly by reading error parameter;
+
+HEADERS
+Authorization
+Bearer *your jwt token*
+
+x-api-key
+{{api-key}}
+
+Body
+raw (json)
+json
+{
+    "fiatCurrency": "eur",
+    "cryptoCurrency": "bnbbsc",
+    "amount": 500,
+    "provider": "transfi"
+}
+Example Request
+Request payout
+View More
+curl
+curl --location 'https://api.nowpayments.io/v1/fiat-payouts' \
+--header 'Authorization: Bearer *your jwt token*' \
+--header 'x-api-key: {{api-key}}' \
+--data '{
+    "fiatCurrency": "eur",
+    "cryptoCurrency": "bnbbsc",
+    "amount": 500,
+    "provider": "transfi"
+}'
+200 OK
+Example Response
+Body
+Headers (1)
+View More
+json
+{
+  "result": {
+    "id": "12345678909",
+    "provider": "transfi",
+    "requestId": null,
+    "status": "NEW",
+    "fiatCurrencyCode": "EUR",
+    "fiatAmount": null,
+    "cryptoCurrencyCode": "BNBBSC",
+    "cryptoCurrencyAmount": "20",
+    "fiatAccountCode": "sepa_bank",
+    "fiatAccountNumber": "1234567890",
+    "payoutDescription": null,
+    "error": null,
+    "createdAt": "2023-10-27T16:25:59.977Z",
+    "updatedAt": "2023-10-27T16:25:59.977Z"
+  }
+}
+GET
+Get payouts
+https://api.nowpayments.io/v1/fiat-payouts?id&provider&requestId&fiatCurrency&cryptoCurrency&status&filter&provider_payout_id&limit&page&orderBy&sortBy&dateFrom&dateTo
+This enpoint shows you the list of previously created payouts from your account.
+
+HEADERS
+Authorization
+Bearer *your jwt token*
+
+PARAMS
+id
+provider
+requestId
+fiatCurrency
+cryptoCurrency
+status
+filter
+provider_payout_id
+limit
+page
+orderBy
+sortBy
+dateFrom
+dateTo
+Example Request
+Get payouts
+View More
+curl
+curl --location 'https://api.nowpayments.io/v1/fiat-payouts' \
+--header 'Authorization: Bearer *your jwt token* '
+200 OK
+Example Response
+Body
+Headers (1)
+View More
+json
+{
+  "result": {
+    "rows": [
+      {
+        "id": "12345678909",
+        "provider": "transfi",
+        "requestId": "1234567890",
+        "status": "FINISHED",
+        "fiatCurrencyCode": "EUR",
+        "fiatAmount": "12.59",
+        "cryptoCurrencyCode": "BNBBSC",
+        "cryptoCurrencyAmount": "0.067",
+        "fiatAccountCode": "sepa_bank",
+        "fiatAccountNumber": "1234567890",
+        "payoutDescription": null,
+        "error": null,
+        "createdAt": "2023-10-27T16:25:59.977Z",
+        "updatedAt": "2023-10-27T16:25:59.977Z"
+      }
+    ]
+  }
+}
+Recurring Payments API (Email Subscriptions feature)
+Streamline your workflows by assigning payments to your customers on a regular basis with NOWPayments.
+This feature involves creating a plan for payments and individual recurring payments for each user.
+First you need to create a Recurring Payment plan:
+
+POST
+Create plan
+https://api.nowpayments.io/v1/subscriptions/plans
+This is the method to create a Recurring Payments plan. Every plan has its unique ID which is required for generating separate payments.
+
+Available parameters:
+"title": the name of your recurring payments plan;
+"interval_day": recurring payments duration in days;
+"amount" : amount of funds paid in fiat;
+"currency" : fiat currency ticker used for price;
+"ipn_callback_url" : your IPN_callback url;
+"success_url" : url user got redirected in case payment was successful;
+"cancel_url" : url user got redirected in case payment was cancelled;
+"partially_paid_url" : url user got redirected in case payment was paid not in full amount;
+
+HEADERS
+Authorization
+Bearer {{token}}
+
+(Required) Your authorization token
+
+Content-Type
+application/json
+
+(Required) Your payload has to be JSON object
+
+Body
+raw (json)
+json
+{
+    "title": "second sub plan",
+    "interval_day": 3,
+    "amount": 1,
+    "currency" : "usd"
+}
+Example Request
+200
+View More
+curl
+curl --location 'https://api.nowpayments.io/v1/subscriptions/plans' \
+--header 'Authorization: Bearer {{token}}' \
+--header 'Content-Type: application/json' \
+--data '{
+    "title": "second sub plan",
+    "interval_day": 1,
+    "amount": 0.5,
+    "currency" : "usd"
+}'
+200 OK
+Example Response
+Body
+Headers (0)
+View More
+Text
+{
+  "result": {
+    "id": "1062307590",
+    "title": "second sub plan",
+    "interval_day": "1",
+    "ipn_callback_url": null,
+    "success_url": null,
+    "cancel_url": null,
+    "partially_paid_url": null,
+    "amount": 0.5,
+    "currency": "USD",
+    "created_at": "2022-10-04T16:28:55.423Z",
+    "updated_at": "2022-10-04T16:28:55.423Z"
+  }
+}
+PATCH
+Update plan
+https://api.nowpayments.io/v1/subscriptions/plans/:plan-id
+This method allows you to add necessary changes to a created plan. They won’t affect users who have already paid; however, the changes will take effect when a new payment is to be made.
+
+AUTHORIZATION
+Bearer Token
+Token
+{{token}}
+
+HEADERS
+Authorization
+Bearer {{token}}
+
+(Required) Your authorization token
+
+Content-Type
+application/json
+
+(Required) Your payload has to be JSON object
+
+PATH VARIABLES
+plan-id
+Body
+raw (json)
+json
+{
+    "title": "test plan",
+    "interval_day": 1,
+    "amount": 2,
+    "currency": "usd"
+}
+Example Request
+200
+View More
+curl
+curl --location --request PATCH 'https://api.nowpayments.io/v1/subscriptions/plans/76215585' \
+--header 'Authorization: Bearer {{token}}' \
+--header 'Content-Type: application/json' \
+--data '{
+    "title": "test plan",
+    "interval_day": 1,
+    "amount": 2,
+    "currency": "usd"
+}'
+Example Response
+Body
+Headers (0)
+View More
+Text
+{
+  "result": {
+    "id": "76215585",
+    "title": "test plan",
+    "interval_day": "1",
+    "ipn_callback_url": null,
+    "success_url": null,
+    "cancel_url": null,
+    "partially_paid_url": null,
+    "amount": 2,
+    "currency": "USD",
+    "created_at": "2022-10-04T16:10:06.214Z",
+    "updated_at": "2022-10-04T16:10:06.214Z"
+  }
+}
+POST
+Create an email subscription
+https://api.nowpayments.io/v1/subscriptions
+This method allows you to send payment links to your customers via email. A day before the paid period ends, the customer receives a new letter with a new payment link.
+
+subscription_plan_id - the ID of the payment plan your customer chooses; such params as the duration and amount will be defined by this ID;
+email - your customer’s email to which the payment links will be sent;
+
+HEADERS
+Authorization
+Bearer {{token}}
+
+(Required) Your authorization token
+
+x-api-key
+{{api-key}}
+
+(Required) Your NOWPayments API key
+
+Content-Type
+application/json
+
+(Required) Your payload has to be JSON object
+
+Body
+raw (json)
+json
+{
+    "subscription_plan_id": 76215585,
+    "email": "test@example.com"
+}
+Example Request
+200
+View More
+curl
+curl --location 'https://api.nowpayments.io/v1/subscriptions' \
+--header 'Authorization: Bearer {{token}}' \
+--header 'x-api-key: {{api-key}}' \
+--header 'Content-Type: application/json' \
+--data-raw '{
+    "subscription_plan_id": 76215585,
+    "email": "test@example.com"
+}'
+200 OK
+Example Response
+Body
+Headers (0)
+View More
+Text
+{
+  "result": {
+    "id": "148427051",
+    "subscription_plan_id": "76215585",
+    "is_active": false,
+    "status": "WAITING_PAY",
+    "expire_date": "2022-10-10T13:46:18.476Z",
+    "subscriber": {
+      "email": "test@example.com"
+    },
+    "created_at": "2022-10-10T13:46:18.476Z",
+    "updated_at": "2022-10-10T13:46:18.476Z"
+  }
+}
+GET
+Get one recurring payment
+https://api.nowpayments.io/v1/subscriptions/:sub_id
+Get information about a particular recurring payment via its ID.
+
+Here is the list of available statuses:
+
+WAITING_PAY - the payment is waiting for user's deposit;
+PAID - the payment is completed;
+PARTIALLY_PAID - the payment is completed, but the final amount is less than required for payment to be fully paid;
+EXPIRED - is being assigned to unpaid payment after 7 days of waiting;
+HEADERS
+x-api-key
+{{api-key}}
+
+(Required) Your NOWPayments API key
+
+PATH VARIABLES
+sub_id
+Example Request
+200
+View More
+curl
+curl --location 'https://api.nowpayments.io/v1/subscriptions/1515573197' \
+--header 'x-api-key: {{api-key}}'
+200 OK
+Example Response
+Body
+Headers (0)
+View More
+Text
+{
+  "result": {
+    "id": "1515573197",
+    "subscription_plan_id": "111394288",
+    "is_active": true,
+    "status": "PAID",
+    "expire_date": "2022-10-12T00:02:00.025Z",
+    "subscriber": {
+      "sub_partner_id": "111394288"
+    },
+    "created_at": "2022-10-09T22:15:50.808Z",
+    "updated_at": "2022-10-09T22:15:50.808Z"
+  }
+}
+DELETE
+Delete recurring payment
+https://api.nowpayments.io/v1/subscriptions/:sub_id
+Completely removes a particular payment from the recurring payment plan.
+You need to specify the payment plan id in the request.
+
+HEADERS
+Authorization
+Bearer {{token}}
+
+(Required) Your authorization token
+
+PATH VARIABLES
+sub_id
+Example Request
+200
+View More
+curl
+curl --location --request DELETE 'https://api.nowpayments.io/v1/subscriptions/:sub_id' \
+--header 'Authorization: Bearer {{token}}' \
+--data ''
+200 OK
+Example Response
+Body
+Headers (0)
+Text
+{
+  "result": "ok"
+}
+Use cases
+This sections is meant for various use cases and descriptions of flows for different fields of activities.
+
+If your field of activity is not described here, feel free to contact us at partners@nowpaymetns.io and request recommended flows for your niche here.
+
+Trading platforms
+Standard Trading platform Flow
+Registration and getting deposits:
+
+API - Integrate "POST Create new user account" into your registration process, so users will have dedicated balance right after completing registration.
+UI - Ask a customer for desirable deposit amount to top up their balance, and desired currency for deposit.
+API - Get the minimum payment amount for the selected currency pair (payment currency to your payout wallet currency) with the "GET Minimum payment amount" method;
+API - Get the estimate of the total amount in crypto with "GET Estimated price" and check that it is larger than the minimum payment amount from step 4;
+API - Call the "POST Deposit with payment" method to create a payment and get the deposit address (in our example, the generated BTC wallet address is returned from this method);
+UI - Ask a customer to send the payment to the generated deposit address (in our example, user has to send BTC coins);
+UI - A customer sends coins, NOWPayments processes and exchanges them (if required), and credit the payment to your players' balance;
+API - You can get the payment status either via our IPN callbacks or manually, using "GET Payment Status" and display it to a customer so that they know when their payment has been processed;
+API - you call the list of payments made to your account via the "GET List of payments" method;
+Payouts:
+
+UI - ask the user for desirable amount, coin and address for payout.
+API - call the player balance with "GET user balance" method and check if player has enough balance.
+API - call "POST validate address" to check if the provided address is valid on the blockchain.
+API - call "POST write off your account" method to collect the requested amount from user balance to your master balance.
+API - call "POST Create payout" to create a payout.
+API - create an OTP password for 2fa validation using external libraries.
+API - call "POST Verify payout" to validate a payout with 2fa code.
+API - You can get the payout status either via our IPN callbacks or manually, using "GET Payout Status" and display it to a customer so that they know when their payment has been processed;
+UI - NOWPayments processes payout and credit the payment to your players' wallet;
+All related information about your operations will also be available in your NOWPayments dashboard.
+
+All related information about your operations will also be available in your NOWPayments dashboard.
+
+If you have any additional questions about integration feel free to drop a message to partners@nowpayments.io for further guidance.
+
+Auth and API status
+This set of methods allows you to check API availability and get a JWT token which is requires as a header for some other methods.
+
+GET
+Get available currencies
+https://api.nowpayments.io/v1/currencies
+This is a method for obtaining information about all cryptocurrencies available for payments for your current setup of payout wallets.
+Optional parameters:
+
+fixed_rate(optional) - boolean, can be true or false. Returns avaliable currencies with minimum and maximum amount of the exchange.
+HEADERS
+x-api-key
+{{your_api_key}}
+
+Example Request
+200
+View More
+curl
+curl --location 'https://api.nowpayments.io/v1/currencies' \
+--header 'x-api-key: <your_api_key>'
+200 OK
+Example Response
+Body
+Headers (20)
+View More
+json
+{
+  "currencies": [
+    "btg",
+    "eth",
+    "xmr",
+    "zec",
+    "xvg",
+    "ada",
+    "ltc",
+    "bch",
+    "qtum",
+    "dash",
+    "xlm",
+    "xrp",
+    "xem",
+    "dgb",
+    "lsk",
+    "doge",
+    "trx",
+    "kmd",
+    "rep",
+    "bat",
+    "ark",
+    "waves",
+    "bnb",
+    "xzc",
+    "nano",
+    "tusd",
+    "vet",
+    "zen",
+    "grs",
+    "fun",
+    "neo",
+    "gas",
+    "pax",
+    "usdc",
+    "ont",
+    "xtz",
+    "link",
+    "rvn",
+    "bnbmainnet",
+    "zil",
+    "bcd",
+    "usdt",
+    "usdterc20",
+    "cro",
+    "dai",
+    "ht",
+    "wabi",
+    "busd",
+    "algo",
+    "usdttrc20",
+    "gt",
+    "stpt",
+    "ava",
+    "sxp",
+    "uni",
+    "okb",
+    "btc"
+  ]
+}
+GET
+Get available currencies (2nd method)
+https://api.nowpayments.io/v1/full-currencies
+This is a method to obtain detailed information about all cryptocurrencies available for payments.
+
+HEADERS
+x-api-key
+{{your_api_key}}
+
+Example Request
+200
+View More
+curl
+curl --location 'https://api.nowpayments.io/v1/full-currencies' \
+--header 'x-api-key: <your_api_key>'
+200 OK
+Example Response
+Body
+Headers (20)
+View More
+json
+"currencies": [
+ {
+ "id": 121,
+ "code": "AAVE",
+ "name": "Aave",
+ "enable": true,
+ "wallet_regex": "^(0x)[0-9A-Fa-f]{40}$",
+ "priority": 127,
+ "extra_id_exists": false,
+ "extra_id_regex": null,
+ "logo_url": "/images/coins/aave.svg",
+ "track": true,
+ "cg_id": "aave",
+ "is_maxlimit": false,
+ "network": "eth",
+ "smart_contract": null,
+ "network_precision": null
+ }
+]
+GET
+Get available checked currencies
+https://api.nowpayments.io/v1/merchant/coins
+This is a method for obtaining information about the cryptocurrencies available for payments. Shows the coins you set as available for payments in the "coins settings" tab on your personal account.
+Optional parameters:
+
+fixed_rate(optional) - boolean, can be true or false. Returns currencies avaliable for fixed rate exchanges with minimum and maximum amount of the exchange.
+HEADERS
+x-api-key
+{{your_api_key}}
+
+Example Request
+200
+View More
+curl
+curl --location 'https://api.nowpayments.io/v1/merchant/coins' \
+--header 'x-api-key: <your_api_key>'
+200 OK
+Example Response
+Body
+Headers (20)
+View More
+json
+{
+  "currencies": [
+    "btg",
+    "eth",
+    "xmr",
+    "zec",
+    "xvg",
+    "ada",
+    "ltc",
+    "bch",
+    "qtum",
+    "dash",
+    "xlm",
+    "xrp",
+    "xem",
+    "dgb",
+    "lsk",
+    "doge",
+    "trx",
+    "kmd",
+    "rep",
+    "bat",
+    "ark",
+    "waves",
+    "bnb",
+    "xzc",
+    "nano",
+    "tusd",
+    "vet",
+    "zen",
+    "grs",
+    "fun",
+    "neo",
+    "gas",
+    "pax",
+    "usdc",
+    "ont",
+    "xtz",
+    "link",
+    "rvn",
+    "bnbmainnet",
+    "zil",
+    "bcd",
+    "usdt",
+    "usdterc20",
+    "cro",
+    "dai",
+    "ht",
+    "wabi",
+    "busd",
+    "algo",
+    "usdttrc20",
+    "gt",
+    "stpt",
+    "ava",
+    "sxp",
+    "uni",
+    "okb",
+    "btc"
+  ]
+}
+Custody
+This section describes our custody feature.
+
+If you prefer, you can set up a full-fledged billing solution. Our API allows you to create user accounts for your players with dedicated balance management for each one of them, transfers between these balances, direct deposits and much more in future.
+
+In order to do that you need:
+
+Create a user balance with "Create new user account" method. You can integrate this endpoint into the registration process on your service so upon registration, players will already have dedicated NOWPayments balance as your sub-user.
+To show the balance at the frontend you can get it with "GET user balance" method. It will return you an array of user balances you can list in the back office.
+To set up top ups, you can use "POST deposit with payment"; it will work as general white-labeled payment directly into user balance. You only need to show the user required for making a deposit information using the response of that endpoint. It's also possible to automatically credit it to player taking advantage of IPN system.
+Managing debit and credit you are meant to use "POST deposit from master account" and "POST write-off" endpoints to make transactions from master balance to user balances, and vice-versa, enlisting all of these operations is possible using "GET transfer" and "GET all transfers" endpoints.
+For payouts administration you will need to collect funds from your players' balance and withdraw it using payouts API.
+POST
+Create new user account
+https://api.nowpayments.io/v1/sub-partner/balance
+This is a method to create an account for your user. After this you'll be able to generate a payment(/v1/sub-partner/payment) or deposit(/v1/sub-partner/deposit) for topping up its balance as well as withdraw funds from it.
+
+You can integrate this endpoint into the registration process on your service so upon registration, players will already have dedicated NOWPayments balance as your sub-user.
+
+Body:
+
+Name : a unique user identifier; you can use any string which doesn’t exceed 30 characters (but NOT an email)
+
+AUTHORIZATION
+Bearer Token
+Token
+{{token}}
+
+HEADERS
+Authorization
+Bearer *your_jwt_token*
+
+Content-Type
+application/json
+
+PARAMS
+Body
+raw (json)
+json
+{
+    "name": "test1"
+}
+Example Request
+200
+View More
+curl
+curl --location 'https://api.nowpayments.io/v1/sub-partner/balance' \
+--data '{
+    "name": "test1"
+}'
+200 OK
+Example Response
+Body
+Headers (0)
+Text
+{
+  "result": {
+    "id": "1515573197",
+    "name": "test1",
+    "created_at": "2022-10-09T21:56:33.754Z",
+    "updated_at": "2022-10-09T21:56:33.754Z"
+  }
+}
+Auth and API status
+This set of methods allows you to check API availability and get a JWT token which is requires as a header for some other methods.
+
+GET
+Get API status
+https://api.nowpayments.io/v1/status
+This is a method to get information about the current state of the API. If everything is OK, you will receive an "OK" message. Otherwise, you'll see some error.
+
+Example Request
+200
+curl
+curl --location 'https://api.nowpayments.io/v1/status'
+200 OK
+Example Response
+Body
+Headers (15)
+json
+{
+  "message": "OK"
+}
+GET
+Get available checked currencies
+https://api.nowpayments.io/v1/merchant/coins
+This is a method for obtaining information about the cryptocurrencies available for payments. Shows the coins you set as available for payments in the "coins settings" tab on your personal account.
+Optional parameters:
+
+fixed_rate(optional) - boolean, can be true or false. Returns currencies avaliable for fixed rate exchanges with minimum and maximum amount of the exchange.
+HEADERS
+x-api-key
+{{your_api_key}}
+
+Example Request
+200
+View More
+curl
+curl --location 'https://api.nowpayments.io/v1/merchant/coins' \
+--header 'x-api-key: <your_api_key>'
+200 OK
+Example Response
+Body
+Headers (20)
+View More
+json
+{
+  "currencies": [
+    "btg",
+    "eth",
+    "xmr",
+    "zec",
+    "xvg",
+    "ada",
+    "ltc",
+    "bch",
+    "qtum",
+    "dash",
+    "xlm",
+    "xrp",
+    "xem",
+    "dgb",
+    "lsk",
+    "doge",
+    "trx",
+    "kmd",
+    "rep",
+    "bat",
+    "ark",
+    "waves",
+    "bnb",
+    "xzc",
+    "nano",
+    "tusd",
+    "vet",
+    "zen",
+    "grs",
+    "fun",
+    "neo",
+    "gas",
+    "pax",
+    "usdc",
+    "ont",
+    "xtz",
+    "link",
+    "rvn",
+    "bnbmainnet",
+    "zil",
+    "bcd",
+    "usdt",
+    "usdterc20",
+    "cro",
+    "dai",
+    "ht",
+    "wabi",
+    "busd",
+    "algo",
+    "usdttrc20",
+    "gt",
+    "stpt",
+    "ava",
+    "sxp",
+    "uni",
+    "okb",
+    "btc"
+  ]
+}
+Custody
+NOWPayments allows you to create deposit accounts for your users, enabling full-fledged crypto billing solution.
+
+POST
+Create new user account
+https://api.nowpayments.io/v1/sub-partner/balance
+This is a method to create an account for your user. After this you'll be able to generate a payment(/v1/sub-partner/payment) or deposit(/v1/sub-partner/deposit) for topping up its balance as well as withdraw funds from it.
+
+Body:
+
+Name : a unique user identifier; you can use any string which doesn’t exceed 30 characters (but NOT an email)
+
+AUTHORIZATION
+Bearer Token
+Token
+{{token}}
+
+HEADERS
+Authorization
+Bearer *your_jwt_token*
+
+Content-Type
+application/json
+
+PARAMS
+Body
+raw (json)
+json
+{
+    "name": "test1"
+}
+Example Request
+200
+View More
+curl
+curl --location 'https://api.nowpayments.io/v1/sub-partner/balance' \
+--data '{
+    "name": "test1"
+}'
+200 OK
+Example Response
+Body
+Headers (0)
+Text
+{
+  "result": {
+    "id": "1515573197",
+    "name": "test1",
+    "created_at": "2022-10-09T21:56:33.754Z",
+    "updated_at": "2022-10-09T21:56:33.754Z"
+  }
+}
+GET
+Get user balance
+https://api.nowpayments.io/v1/sub-partner/balance/:id
+This request can be made only from a whitelisted IP.
+If IP whitelisting is disabled, this request can be made by any user that has an API key.
+
+HEADERS
+x-api-key
+{{your_api_key}}
+
+PATH VARIABLES
+id
+Example Request
+200
+View More
+curl
+curl --location 'https://api.nowpayments.io/v1/sub-partner/balance/:id' \
+--header 'x-api-key: {{your_api_key}}'
+200 OK
+Example Response
+Body
+Headers (0)
+View More
+Text
+{
+  "result": {
+    "subPartnerId": "111394288",
+    "balances": {
+      "usddtrc20": {
+        "amount": 0.7,
+        "pendingAmount": 0
+      },
+      "usdtbsc": {
+        "amount": 1.0001341847350678,
+        "pendingAmount": 0
+      }
+    }
+  }
+}
+GET
+Get users
+https://api.nowpayments.ioo/v1/sub-partner?id=111&offset=1&limit=10&order=DESC
+This method returns the entire list of your users.
+
+AUTHORIZATION
+Bearer Token
+Token
+{{token}}
+
+HEADERS
+Authorization
+Bearer *your_jwt_token*
+
+PARAMS
+id
+111
+
+int or array of int (optional)
+
+offset
+1
+
+(optional) default 0
+
+limit
+10
+
+(optional) default 10
+
+order
+DESC
+
+ASC / DESC (optional) default ASC
+
+Example Request
+200
+View More
+curl
+curl --location 'https://api.nowpayments.ioo/v1/sub-partner?offset=0&limit=10&order=DESC'
+Example Response
+Body
+Headers (0)
+View More
+Text
+{
+  "result": [
+    {
+      "id": "111394288",
+      "name": "test",
+      "created_at": "2022-10-06T16:42:47.352Z",
+      "updated_at": "2022-10-06T16:42:47.352Z"
+    },
+    {
+      "id": "1515573197",
+      "name": "test1",
+      "created_at": "2022-10-09T21:56:33.754Z",
+      "updated_at": "2022-10-09T21:56:33.754Z"
+    }
+  ],
+  "count": 2
+}
+GET
+Get transfer
+https://api.nowpayments.io/v1/sub-partner/transfer/:id
+Get the actual information about the transfer. You need to provide the transfer ID in the request.
+
+The list of available statuses:
+
+CREATED - the transfer is being created;
+WAITING - the transfer is waiting for payment;
+FINISHED - the transfer is completed;
+REJECTED - for some reason, transaction failed;
+HEADERS
+Authorization
+Bearer *your_jwt_token*
+
+PATH VARIABLES
+id
+Example Request
+200
+View More
+curl
+curl --location 'https://api.nowpayments.io/v1/sub-partner/transfer/327209161'
+200 OK
+Example Response
+Body
+Headers (0)
+View More
+Text
+{
+  "result": {
+    "id": "327209161",
+    "from_sub_id": "111394288",
+    "to_sub_id": "1515573197",
+    "status": "FINISHED",
+    "created_at": "2022-10-09T22:09:02.181Z",
+    "updated_at": "2022-10-09T22:10:01.853Z",
+    "amount": "1",
+    "currency": "usdtbsc"
+  }
+}
+POST
+Transfer
+https://api.nowpayments.io/v1/sub-partner/transfer
+This method allows creating transfers between users' accounts.
+You can check the transfer's status using Get transfer method.
+
+The list of available statuses:
+
+CREATED - the transfer is being created;
+WAITING - the transfer is waiting for payment;
+FINISHED - the transfer is completed;
+REJECTED - for some reason, transaction failed;
+AUTHORIZATION
+Bearer Token
+Token
+{{token}}
+
+HEADERS
+x-api-key
+{{x-api-token}}
+
+Content-Type
+application/json
+
+Body
+raw (json)
+json
+{
+    "currency": "trx",
+    "amount": 0.3,
+    "from_id": 1111111,
+    "to_id":  1111111
+}
+Example Request
+Transfer
+View More
+curl
+curl --location 'https://api.nowpayments.io/v1/sub-partner/transfer' \
+--header 'x-api-key: {{x-api-token}}' \
+--data '{
+    "currency": "trx",
+    "amount": 0.3,
+    "from_id": 1111111,
+    "to_id":  1111111
+}'
+200 OK
+Example Response
+Body
+Headers (0)
+View More
+Text
+{
+    "result": {
+        "id": "327209161",
+        "from_sub_id": "111394288", //sub account
+        "to_sub_id": "1515573197", //sub account
+        "status": "WAITING",
+        "created_at": "2022-10-09T22:09:02.181Z",
+        "updated_at": "2022-10-09T22:09:02.181Z",
+        "amount": "1",
+        "currency": "usdtbsc"
+    }
+}
+POST
+Deposit with payment
+https://api.nowpayments.io/v1/sub-partner/payment
+This method allows you to top up a user account with a general payment.
+You can check the actual payment status by using GET 9 Get payment status request.
+
+AUTHORIZATION
+Bearer Token
+Token
+{{token}}
+
+HEADERS
+x-api-key
+{{x-api-key}}
+
+Content-Type
+application/json
+
+Body
+raw (json)
+json
+{
+    "currency": "trx",
+    "amount": 0.3,
+    "sub_partner_id": "1631380403",
+    "fixed_rate": false
+}
+Example Request
+Deposit with payment
+View More
+curl
+curl --location 'https://api.nowpayments.io/v1/sub-partner/payment' \
+--header 'x-api-key: {{x-api-token}}' \
+--data '{
+    "currency": "trx",
+    "amount": 50,
+    "sub_partner_id": "1631380403",
+    "fixed_rate": false
+}'
+200 OK
+Example Response
+Body
+Headers (0)
+View More
+Text
+{
+  "result": {
+    "payment_id": "5250038861",
+    "payment_status": "waiting",
+    "pay_address": "TSszwFcbpkrZ2H85ZKsB6bEV5ffAv6kKai",
+    "price_amount": 50,
+    "price_currency": "trx",
+    "pay_amount": 50,
+    "amount_received": 0.0272467,
+    "pay_currency": "trx",
+    "order_id": null,
+    "order_description": null,
+    "ipn_callback_url": null,
+    "created_at": "2022-10-11T10:49:27.414Z",
+    "updated_at": "2022-10-11T10:49:27.414Z",
+    "purchase_id": "5932573772",
+    "smart_contract": null,
+    "network": "trx",
+    "network_precision": null,
+    "time_limit": null,
+    "burning_percent": null,
+    "expiration_estimate_date": "2022-10-11T11:09:27.418Z",
+    "valid_until": "valid_until_timestamp",
+    "type": "crypto2crypto"
+  }
+}
+POST
+Deposit from your master account
+https://api.nowpayments.io/v1/sub-partner/deposit
+This is a method for transferring funds from your master account to a user's one.
+The actual information about the transfer's status can be obtained via Get transfer method.
+
+The list of available statuses:
+
+CREATED - the transfer is being created;
+WAITING - the transfer is waiting for payment;
+FINISHED - the transfer is completed;
+REJECTED - for some reason, transaction failed;
+AUTHORIZATION
+Bearer Token
+Token
+{{token}}
+
+HEADERS
+x-api-key
+{{x-api-token}}
+
+Content-Type
+application/json
+
+Body
+raw (json)
+json
+{
+    "currency": "trx",
+    "amount": 0.3,
+    "sub_partner_id": "1631380403"
+}
+Example Request
+200
+View More
+curl
+curl --location 'https://api.nowpayments.io/v1/sub-partner/deposit' \
+--header 'x-api-key: {{x-api-token}}' \
+--data '{
+    "currency": "usddtrc20",
+    "amount": 0.7,
+    "sub_partner_id": "111394288"
+}'
+Example Response
+Body
+Headers (0)
+View More
+Text
+{
+    "result": {
+        "id": "19649354",
+        "from_sub_id": "5209391548", //main account
+        "to_sub_id": "111394288", //sub account
+        "status": "WAITING",
+        "created_at": "2022-10-11T10:01:33.323Z",
+        "updated_at": "2022-10-11T10:01:33.323Z",
+        "amount": "0.7",
+        "currency": "usddtrc20"
+    }
+}
+POST
+Write off on your account
+https://api.nowpayments.io/v1/sub-partner/write-off
+With this method you can withdraw funds from a user's account and transfer them to your master account.
+
+The actual status of the transaction can be checked with Get transfer method.
+
+The list of available statuses:
+
+CREATED - the transfer is being created;
+WAITING - the transfer is waiting for payment;
+FINISHED - the transfer is completed;
+REJECTED - for some reason, transaction failed;
+AUTHORIZATION
+Bearer Token
+Token
+{{token}}
+
+HEADERS
+Authorization
+Bearer *your_jwt_token*
+
+Content-Type
+application/json
+
+Body
+raw (json)
+json
+{
+    "currency": "trx",
+    "amount": 0.3,
+    "sub_partner_id": "1631380403"
+}
+Example Request
+200
+View More
+curl
+curl --location 'https://api.nowpayments.io/v1/sub-partner/write-off' \
+--header 'x-api-key: {{x-api-token}}' \
+--data '{
+    "currency": "trx",
+    "amount": 0.3,
+    "sub_partner_id": "1631380403"
+}'
+Example Response
+Body
+Headers (0)
+View More
+Text
+{
+    "result": {
+        "id": "19649354",
+        "from_sub_id": "111394288", //sub account
+        "to_sub_id": "5209391548", //main account
+        "status": "WAITING",
+        "created_at": "2022-10-11T10:01:33.323Z",
+        "updated_at": "2022-10-11T10:01:33.323Z",
+        "amount": "0.7",
+        "currency": "usddtrc20"
+    }
+}
+Recurring Payments API (Email Subscriptions feature)
+Streamline your workflows by assigning payments to your customers on a regular basis with NOWPayments.
+This feature involves creating a plan for payments and individual recurring payments for each user.
+First you need to create a Recurring Payment plan:
+
+POST
+Create an email subscription
+https://api.nowpayments.io/v1/subscriptions
+This method allows you to send payment links to your customers via email. A day before the paid period ends, the customer receives a new letter with a new payment link.
+
+subscription_plan_id - the ID of the payment plan your customer chooses; such params as the duration and amount will be defined by this ID;
+email - your customer’s email to which the payment links will be sent;
+
+AUTHORIZATION
+Bearer Token
+Token
+{{token}}
+
+HEADERS
+x-api-key
+{{your_api_key}}
+
+Content-Type
+application/json
+
+Body
+raw (json)
+json
+{
+    "subscription_plan_id": 76215585,
+    "email": "test@example.com"
+}
+Example Request
+200
+View More
+curl
+curl --location 'https://api.nowpayments.io/v1/subscriptions' \
+--header 'x-api-key: <enter_your_api_key>' \
+--data-raw '{
+    "subscription_plan_id": 76215585,
+    "email": "test@example.com"
+}'
+200 OK
+Example Response
+Body
+Headers (0)
+View More
+Text
+{
+  "result": {
+    "id": "148427051",
+    "subscription_plan_id": "76215585",
+    "is_active": false,
+    "status": "WAITING_PAY",
+    "expire_date": "2022-10-10T13:46:18.476Z",
+    "subscriber": {
+      "email": "test@example.com"
+    },
+    "created_at": "2022-10-10T13:46:18.476Z",
+    "updated_at": "2022-10-10T13:46:18.476Z"
+  }
+}
+GET
+Get many recurring payments
+https://api.nowpayments.io/v1/subscriptions
+The method allows you to view the entire list of recurring payments filtered by payment status and/or payment plan id
+
+Available parameters:
+
+limit - the amount of shown items
+offset - setting the offset
+is_active - status of the recurring payment
+status - filter by status of recurring payment
+subscription_plan_id - filter results by subscription plan id.
+Here is the list of available statuses:
+
+WAITING_PAY - the payment is waiting for user's deposit;
+PAID - the payment is completed;
+PARTIALLY_PAID - the payment is completed, but the final amount is less than required for payment to be fully paid;
+EXPIRED - is being assigned to unpaid payment after 7 days of waiting;
+HEADERS
+x-api-key
+{{your_api_key}}
+
+PARAMS
+status
+PARTIALLY_PAID
+
+"WAITING_PAY" / "PAID" / "PARTIALLY_PAID" / "EXPIRED"
+
+subscription_plan_id
+111394288
+
+is_active
+false
+
+true / false
+
+limit
+10
+
+offset
+0
+
+Example Request
+200
+View More
+curl
+curl --location 'https://api.nowpayments.io/v1/subscriptions' \
+--header 'x-api-key: {{your_api_key}}'
+200 OK
+Example Response
+Body
+Headers (0)
+View More
+Text
+{
+  "result": [
+    {
+      "id": "1515573197",
+      "subscription_plan_id": "111394288",
+      "is_active": true,
+      "status": "PAID",
+      "expire_date": "2022-10-11T00:02:00.025Z",
+      "subscriber": {
+        "sub_partner_id": "111394288"
+      },
+      "created_at": "2022-10-09T22:15:50.808Z",
+      "updated_at": "2022-10-09T22:15:50.808Z"
+    },
+    {
+      "id": "111394288",
+      "subscription_plan_id": "111394288",
+      "is_active": false,
+      "status": "WAITING_PAY",
+      "expire_date": "2022-10-07T16:46:00.910Z",
+      "subscriber": {
+        "email": "test@example.com"
+      },
+      "created_at": "2022-10-06T16:40:28.880Z",
+      "updated_at": "2022-10-06T16:40:28.880Z"
+    }
+  ],
+  "count": 2
+}
+GET
+Get balance
+https://api.nowpayments.io/v1/balance
+This method returns your balance in different currencies.
+
+The response contains a list of currencies with two parameters:
+
+amount - avaliable currency amount;
+pendingAmount - currently processing currency amount;
+HEADERS
+x-api-key
+{{your_api_key}}
+
+Example Request
+200
+curl
+curl --location 'https://api.nowpayments.io/v1/balance' \
+--header 'x-api-key: <your_api_key>' \
+--header 'Authorization: Bearer *your_jwt_token*'
+200 OK
+Example Response
+Body
+Headers (0)
+View More
+json
+{
+  "eth": {
+    "amount": 0.0001817185463659148,
+    "pendingAmount": 0
+  },
+  "trx": {
+    "amount": 0,
+    "pendingAmount": 0
+  },
+  "xmr": {
+    "amount": 0,
+    "pendingAmount": 0
+  }
+}
+POST
+Validate address
+https://api.nowpayments.io/v1/payout/validate-address
+This endpoint allows you to check if your payout address is valid and funds can be received there.
+
+Available parameters:
+
+address - the payout address;
+currency - the ticker of payout currency;
+(optional) extra_id - memo or destination tag, if applicable;
+HEADERS
+x-api-key
+{{your_api_key}}
+
+Content-Type
+application/json
+
+Body
+raw
+View More
+{
+    "address": "0g033BbF609Ed876576735a02fa181842319Dd8b8F", 
+    "currency": "eth", 
+    "extra_id":null
+}
+Example Request
+400
+View More
+curl
+curl --location 'https://api.nowpayments.io/v1/payout/validate-address' \
+--header 'x-api-key: {{your_api_key}}' \
+--header 'Content-Type: application/json' \
+--data '{
+    "address": "0g033BbF609Ed876576735a02fa181842319Dd8b8F", 
+    "currency": "eth", 
+    "extra_id":null
+}'
+400 Bad Request
+Example Response
+Body
+Headers (0)
+{
+  "status": false,
+  "statusCode": 400,
+  "code": "BAD_CREATE_WITHDRAWAL_REQUEST",
+  "message": "Invalid payout_address: [currency] [address]"
+}
+POST
+Create payout
+https://api.nowpayments.io/v1/payout
+This is the method to create a payout. You need to provide your data as a JSON-object payload. Next is a description of the required request fields:
+
+address (required) - the address where you want to send funds;
+currency (required) - payout currency;
+amount (required) - amount of the payout. Must not exceed 6 decimals (i.e. 0.123456);
+extra_id (optional) - memo, destination tag, etc.
+ipn_callback_url(optional) - url to receive callbacks, should contain "http" or "https", eg. "https://nowpayments.io". Please note: you can either set ipn_callback_url for each individual payout, or for all payouts in a batch (see example). In both cases IPNs will be sent for each payout separately;
+payout_description(optional) - a description of the payout. You can set it for all payouts in a batch;
+unique_external_id(optional) - a unique external identifier;
+fiat_amount(optional) - used for setting the payout amount in fiat equivalent. Overrides "amount" parameter;
+fiat_currency (optional) - used for determining fiat currency to get the fiat equivalent for. Required for "fiat_amount" parameter to work. DOES NOT override "currency" parameter. Payouts are made in crypto only, no fiat payouts are available;
+Here the list of the available payout statuses:
+
+creating;
+processing;
+sending;
+finished;
+failed;
+rejected;
+Please, take note that you may request a single payout, but it still should be formatted as an array with the single element.
+
+AUTHORIZATION
+Bearer Token
+Token
+{{token}}
+
+HEADERS
+x-api-key
+<your_api_key>
+
+Content-Type
+application/json
+
+Authorization
+Bearer *your_jwt_token*
+
+Body
+raw (json)
+View More
+json
+{
+    "payout_description": "description",
+    "ipn_callback_url": "https://nowpayments.io",
+    "withdrawals": [
+        {
+            "address": "TEmGwPeRTPiLFLVfBxXkSP91yc5GMNQhfS",
+            "currency": "trx",
+            "amount": 200,
+            "ipn_callback_url": "https://nowpayments.io"
+        },
+        {
+           "address": "0x1EBAeF7Bee7B3a7B2EEfC72e86593Bf15ED37522",
+            "currency": "eth",
+            "amount": 0.1,
+            "ipn_callback_url": "https://nowpayments.io"
+        }
+    ]
+}
+Example Request
+200
+View More
+curl
+curl --location 'https://api.nowpayments.io/v1/payout' \
+--header 'x-api-key: <your_api_key>' \
+--header 'Content-Type: application/json' \
+--header 'Authorization: Bearer *your_jwt_token*' \
+--data '{
+    "ipn_callback_url": "https://nowpayments.io",
+    "withdrawals": [
+        {
+            "address": "TEmGwPeRTPiLFLVfBxXkSP91yc5GMNQhfS",
+            "currency": "trx",
+            "amount": 200,
+            "ipn_callback_url": "https://nowpayments.io"
+        },
+        {
+            "address": "0x1EBAeF7Bee7B3a7B2EEfC72e86593Bf15ED37522",
+            "currency": "eth",
+            "amount": 0.1,
+            "ipn_callback_url": "https://nowpayments.io"
+        },
+        {
+            "address": "0x1EBAeF7Bee7B3a7B2EEfC72e86593Bf15ED37522",
+            "currency": "usdc",
+            "amount": 1,
+            "fiat_amount": 100,
+            "fiat_currency": "usd",
+            "ipn_callback_url": "https://nowpayments.io"
+        }
+    ]
+}'
+200 OK
+Example Response
+Body
+Headers (0)
+View More
+json
+{
+  "id": "5000000713",
+  "withdrawals": [
+    {
+      "is_request_payouts": false,
+      "id": "5000000000",
+      "address": "TEmGwPeRTPiLFLVfBxXkSP91yc5GMNQhfS",
+      "currency": "trx",
+      "amount": "200",
+      "batch_withdrawal_id": "5000000000",
+      "ipn_callback_url": "https://nowpayments.io",
+      "status": "WAITING",
+      "extra_id": null,
+      "hash": null,
+      "error": null,
+      "payout_description": null,
+      "unique_external_id": null,
+      "created_at": "2020-11-12T17:06:12.791Z",
+      "requested_at": null,
+      "updated_at": null
+    },
+    {
+      "is_request_payouts": false,
+      "id": "5000000001",
+      "address": "0x1EBAeF7Bee7B3a7B2EEfC72e86593Bf15ED37522",
+      "currency": "eth",
+      "amount": "0.1",
+      "batch_withdrawal_id": "5000000000",
+      "ipn_callback_url": "https://nowpayments.io",
+      "status": "WAITING",
+      "extra_id": null,
+      "hash": null,
+      "error": null,
+      "payout_description": null,
+      "unique_external_id": null,
+      "createdAt": "2020-11-12T17:06:12.791Z",
+      "requestedAt": null,
+      "updatedAt": null
+    },
+    {
+      "is_request_payouts": false,
+      "id": "5000000002",
+      "address": "0x1EBAeF7Bee7B3a7B2EEfC72e86593Bf15ED37522",
+      "currency": "usdc",
+      "amount": "99.84449793",
+      "fiat_amount": "100",
+      "fiat_currency": "usd",
+      "batch_withdrawal_id": "5000000000",
+      "ipn_callback_url": "https://nowpayments.io",
+      "status": "WAITING",
+      "extra_id": null,
+      "hash": null,
+      "error": null,
+      "payout_description": null,
+      "unique_external_id": null,
+      "createdAt": "2020-11-12T17:06:12.791Z",
+      "requestedAt": null,
+      "updatedAt": null
+    }
+  ]
+}
+POST
+Verify payout
+https://api.nowpayments.io/v1/payout/:batch-withdrawal-id/verify
+This method is required to verify payouts by using your 2FA code.
+You’ll have 10 attempts to verify the payout. If it is not verified after 10 attempts, the payout will remain in ‘creating’ status.
+Payout will be processed only when it is verified.
+
+If you have 2FA app enabled in your dashboard, payouts will accept 2FA code from your app. Otherwise the code for payouts validation will be sent to your registration email.
+
+Please take a note that unverified payouts will be automatically rejected in an hour after creation.
+
+Next is a description of the required request fields:
+
+:batch-withdrawal-id - payout id you received in 2. Create payout method;
+verification_code - 2fa code you received with your Google Auth app or via email;
+In order to establish an automatic verification of payouts, you should switch 2FA through the application.
+There are several libraries for different frameworks aimed on generating a 2FA codes based on a secret key from your account settings, for example, Speakeasy for JavaScript.
+We do not recommend to change any default settings.
+
+Plain Text
+const 2faVerificationCode = speakeasy.totp({
+      your_2fa_secret_key,
+      encoding: 'base32',
+})
+AUTHORIZATION
+Bearer Token
+Token
+{{token}}
+
+HEADERS
+x-api-key
+{{your_api_key}}
+
+Authorization
+Bearer *your_jwt_token*
+
+PATH VARIABLES
+batch-withdrawal-id
+Body
+raw (json)
+json
+{
+  "verification_code": "123456"
+}
+Example Request
+200
+View More
+curl
+curl --location 'https://api.nowpayments.io/v1/payout/5000000191/verify' \
+--header 'x-api-key: {{your_api_key}}' \
+--header 'Authorization: Bearer *your_jwt_token*' \
+--header 'Content-Type: application/json' \
+--data '{
+  "verification_code": "123456"
+}'
+200 OK
+Example Response
+Body
+Headers (0)
+OK
+GET
+Get payout status
+https://api.nowpayments.io/v1/payout/<payout_id>
+Get the actual information about the payout. You need to provide the ID of the payout in the request.
+
+NOTE! You should make the get payout status request with the same API key that you used in the creat_payout request.
+
+Here is the list of available statuses:
+
+creating;
+processing;
+sending;
+finished;
+failed;
+rejected;
+HEADERS
+x-api-key
+{{your_api_key}}
+
+Example Request
+200
+View More
+curl
+curl --location 'https://api.nowpayments.io/v1/payout/:payout_id' \
+--header 'x-api-key: <your_api_key>' \
+--header 'Authorization: Bearer *your_jwt_token*'
+200 OK
+Example Response
+Body
+Headers (0)
+View More
+json
+[
+  {
+    "id": "<payout_id>",
+    "address": "<payout_address>",
+    "currency": "trx",
+    "amount": "200",
+    "batch_withdrawal_id": "<batchWithdrawalId>",
+    "status": "WAITING",
+    "extra_id": null,
+    "hash": null,
+    "error": null,
+    "is_request_payouts": false,
+    "ipn_callback_url": null,
+    "unique_external_id": null,
+    "payout_description": null,
+    "created_at": "2020-11-12T17:06:12.791Z",
+    "requested_at": null,
+    "updated_at": null
+  }
+]

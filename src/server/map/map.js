@@ -76,10 +76,12 @@ exports.Map = class {
                         gameMoney: cell.gameMoney || 0,
                         isProtected: cell.isCurrentlyProtected(),
                         protectionTimeLeft: cell.getProtectionTimeLeft(),
-                        hasShield: cell.hasShield()
+                        hasShield: cell.hasShield(),
+                        skinId: cell.skinId || player.skinId || 1 // Agregar skinId de la célula o del jugador
                     })),
                     massTotal: Math.round(player.massTotal),
                     hue: player.hue,
+                    skinId: player.skinId || 1, // Agregar skinId del jugador
                     id: player.id,
                     name: player.name,
                     gameMoney: player.getTotalMoney() || 0
@@ -87,14 +89,14 @@ exports.Map = class {
             }
 
             var visiblePlayers = [];
-            console.log(`[MAP_DEBUG] Jugador actual: ${currentPlayer.name} (${currentPlayer.x}, ${currentPlayer.y})`);
-            console.log(`[MAP_DEBUG] Total de jugadores en el mapa: ${this.players.data.length}`);
+                    // console.log(`[MAP_DEBUG] Jugador actual: ${currentPlayer.name} (${currentPlayer.x}, ${currentPlayer.y})`);
+        // console.log(`[MAP_DEBUG] Total de jugadores en el mapa: ${this.players.data.length}`);
             
             for (let player of this.players.data) {
-                console.log(`[MAP_DEBUG] Verificando jugador: ${player.name} (${player.x}, ${player.y})`);
+                // console.log(`[MAP_DEBUG] Verificando jugador: ${player.name} (${player.x}, ${player.y})`);
                 for (let cell of player.cells) {
                     const isVisible = isVisibleEntity(cell, currentPlayer);
-                    console.log(`[MAP_DEBUG] Célula de ${player.name} visible para ${currentPlayer.name}: ${isVisible}`);
+                    // console.log(`[MAP_DEBUG] Célula de ${player.name} visible para ${currentPlayer.name}: ${isVisible}`);
                     if (isVisible) {
                         visiblePlayers.push(extractData(player));
                         break;
@@ -102,7 +104,7 @@ exports.Map = class {
                 }
             }
             
-            console.log(`[MAP_DEBUG] Jugadores visibles para ${currentPlayer.name}: ${visiblePlayers.length}`);
+            // console.log(`[MAP_DEBUG] Jugadores visibles para ${currentPlayer.name}: ${visiblePlayers.length}`);
 
             callback(extractData(currentPlayer), visiblePlayers, visibleFood, visibleMass, visibleViruses, visiblePowerFood);
         }

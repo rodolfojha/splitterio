@@ -491,6 +491,15 @@
                     <button id="navAdminBtn" class="bg-purple-600 text-white font-bold py-2 px-4 rounded-full shadow-lg hover:bg-purple-700 transition-colors duration-300 mr-2">
                         Admin
                     </button>
+                    <a href="/history.html" class="bg-green-600 text-white font-bold py-2 px-4 rounded-full shadow-lg hover:bg-green-700 transition-colors duration-300 mr-2">
+                        📊 Historial
+                    </a>
+                    <button id="addFundsBtn" class="bg-yellow-600 text-white font-bold py-2 px-4 rounded-full shadow-lg hover:bg-yellow-700 transition-colors duration-300 mr-2">
+                        💰 Add Funds
+                    </button>
+                    <button id="myPaymentsBtn" class="bg-blue-600 text-white font-bold py-2 px-4 rounded-full shadow-lg hover:bg-blue-700 transition-colors duration-300 mr-2">
+                        📋 My Payments
+                    </button>
                     <button id="navLogoutBtn" class="bg-red-500 text-white font-bold py-2 px-4 rounded-full shadow-lg hover:bg-red-600 transition-colors duration-300">
                         Logout
                     </button>
@@ -651,33 +660,29 @@
                     <div class="bg-gray-800 bg-opacity-70 backdrop-blur-md rounded-2xl p-6 shadow-xl border-2 border-gray-700 flex flex-col items-center">
                         <h3 class="text-xl font-bold mb-4">🎨 Personalizar</h3>
                         
-                                                 <!-- Círculo de preview con skin -->
-                         <div class="relative mb-4">
-                             <div id="skinPreview" class="w-32 h-32 rounded-full overflow-hidden border-4 border-white shadow-lg bg-gradient-to-br from-blue-400 to-purple-600">
-                                 <img id="currentSkin" src="img/skin1.jpg" alt="Skin Preview" class="w-full h-full object-cover">
-                             </div>
-                         </div>
-                        
-                        <!-- Controles de skin -->
-                        <div class="flex space-x-2 mb-4">
-                            <button id="prevSkinBtn" class="bg-gray-600 text-white p-2 rounded-full hover:bg-gray-500 transition-colors duration-300">
-                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                                    <path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd"></path>
-                                </svg>
-                            </button>
-                            <button id="changeSkinBtn" class="bg-gradient-to-r from-purple-500 to-pink-500 text-white font-bold py-2 px-4 rounded-full hover:from-purple-600 hover:to-pink-600 transition-all duration-300 transform hover:scale-105">
-                                🔄 Cambiar Skin
-                            </button>
-                            <button id="nextSkinBtn" class="bg-gray-600 text-white p-2 rounded-full hover:bg-gray-500 transition-colors duration-300">
-                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                                    <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path>
-                                </svg>
-                            </button>
+                        <!-- Grid de skins -->
+                        <div class="grid grid-cols-2 gap-3 mb-4 w-full">
+                            <div class="skin-option" data-skin="1">
+                                <img src="img/skin1.jpg" alt="Skin 1" class="w-full h-20 object-cover rounded-lg border-2 border-transparent hover:border-yellow-400 cursor-pointer transition-all duration-300">
+                                <p class="text-xs text-center mt-1">Clásica</p>
+                            </div>
+                            <div class="skin-option" data-skin="2">
+                                <img src="img/skin2.jpg" alt="Skin 2" class="w-full h-20 object-cover rounded-lg border-2 border-transparent hover:border-yellow-400 cursor-pointer transition-all duration-300">
+                                <p class="text-xs text-center mt-1">Neon</p>
+                            </div>
+                            <div class="skin-option" data-skin="3">
+                                <img src="img/skin3.jpg" alt="Skin 3" class="w-full h-20 object-cover rounded-lg border-2 border-transparent hover:border-yellow-400 cursor-pointer transition-all duration-300">
+                                <p class="text-xs text-center mt-1">Azul</p>
+                            </div>
+                            <div class="skin-option" data-skin="4">
+                                <img src="img/skin4.jpg" alt="Skin 4" class="w-full h-20 object-cover rounded-lg border-2 border-transparent hover:border-yellow-400 cursor-pointer transition-all duration-300">
+                                <p class="text-xs text-center mt-1">Roja</p>
+                            </div>
                         </div>
                         
-                        <!-- Información de la skin -->
+                        <!-- Información de la skin seleccionada -->
                         <div class="text-center text-sm text-gray-300">
-                            <p id="skinInfo">Skin personalizada para tu experiencia única</p>
+                            <p id="selectedSkinInfo">Skin seleccionada: <span class="text-yellow-400">Clásica</span></p>
                         </div>
                     </div>
                 </div>
@@ -804,105 +809,133 @@
         }
 
         function initializeSkinSystem() {
+            // Configuración de skins
             const skins = [
-                { id: 1, src: 'img/skin1.jpg', name: 'Skin Clásica', description: 'Diseño clásico y elegante' },
-                { id: 2, src: 'img/skin2.jpg', name: 'Skin Neon', description: 'Estilo futurista con colores vibrantes' },
-                { id: 3, src: 'img/skin3.jpg', name: 'Skin Galaxy', description: 'Inspirada en el espacio profundo' },
-                { id: 4, src: 'img/skin4.jpg', name: 'Skin Fire', description: 'Diseño ardiente y poderoso' }
+                { id: 1, name: 'Clásica', hue: 200 },
+                { id: 2, name: 'Neon', hue: 280 },
+                { id: 3, name: 'Azul', hue: 240 },
+                { id: 4, name: 'Roja', hue: 0 }
             ];
             
-            let currentSkinIndex = 0;
-            const currentSkinImg = document.getElementById('currentSkin');
-            const skinInfo = document.getElementById('skinInfo');
-            const prevSkinBtn = document.getElementById('prevSkinBtn');
-            const nextSkinBtn = document.getElementById('nextSkinBtn');
-            const changeSkinBtn = document.getElementById('changeSkinBtn');
+            let selectedSkinId = 1; // Skin por defecto
+            const skinOptions = document.querySelectorAll('.skin-option');
+            const selectedSkinInfo = document.getElementById('selectedSkinInfo');
             
-            function updateSkin() {
-                const skin = skins[currentSkinIndex];
-                currentSkinImg.src = skin.src;
-                skinInfo.textContent = skin.description;
+            // Función para actualizar la visualización
+            function updateSkinDisplay() {
+                // Remover selección anterior
+                skinOptions.forEach(option => {
+                    option.querySelector('img').classList.remove('border-yellow-400');
+                    option.querySelector('img').classList.add('border-transparent');
+                });
                 
-                // Efecto de transición suave
-                currentSkinImg.style.opacity = '0';
-                setTimeout(() => {
-                    currentSkinImg.style.opacity = '1';
-                }, 150);
+                // Seleccionar la skin actual
+                const currentOption = document.querySelector(`[data-skin="${selectedSkinId}"]`);
+                if (currentOption) {
+                    currentOption.querySelector('img').classList.remove('border-transparent');
+                    currentOption.querySelector('img').classList.add('border-yellow-400');
+                }
+                
+                // Actualizar texto informativo
+                const skin = skins.find(s => s.id === selectedSkinId);
+                if (skin && selectedSkinInfo) {
+                    selectedSkinInfo.innerHTML = `Skin seleccionada: <span class="text-yellow-400">${skin.name}</span>`;
+                }
+                
+                console.log(`[SKIN_SYSTEM] Skin seleccionada: ${selectedSkinId} (${skin.name})`);
             }
             
-            function nextSkin() {
-                currentSkinIndex = (currentSkinIndex + 1) % skins.length;
-                updateSkin();
+            // Función para seleccionar una skin
+            function selectSkin(skinId) {
+                selectedSkinId = skinId;
+                
+                // Guardar en localStorage
+                localStorage.setItem('selectedSkinId', selectedSkinId);
+                console.log(`[SKIN_SYSTEM] Skin ${selectedSkinId} guardada en localStorage`);
+                
+                // Actualizar visualización
+                updateSkinDisplay();
+                
+                // Enviar al servidor si está conectado
+                if (window.socket && window.socket.connected) {
+                    const skin = skins.find(s => s.id === selectedSkinId);
+                    if (skin) {
+                        window.socket.emit('updateSkin', {
+                            skinId: skin.id,
+                            skinName: skin.name,
+                            skinHue: skin.hue
+                        });
+                        console.log(`[SKIN_SYSTEM] Skin enviada al servidor:`, {
+                            skinId: skin.id,
+                            skinName: skin.name,
+                            skinHue: skin.hue
+                        });
+                        
+                        // Mostrar mensaje de confirmación
+                        showSkinChangeMessage(skin.name);
+                    }
+                } else {
+                    // Si no hay conexión, mostrar mensaje con el nombre de la skin
+                    const skin = skins.find(s => s.id === selectedSkinId);
+                    if (skin) {
+                        showSkinChangeMessage(skin.name);
+                    }
+                }
             }
             
-            function prevSkin() {
-                currentSkinIndex = (currentSkinIndex - 1 + skins.length) % skins.length;
-                updateSkin();
-            }
-            
-            function changeSkin() {
-                // Efecto de rotación y cambio
-                const preview = document.getElementById('skinPreview');
-                preview.style.transform = 'rotate(360deg) scale(1.1)';
-                preview.style.transition = 'all 0.5s ease-in-out';
-                
-                setTimeout(() => {
-                    nextSkin();
-                    preview.style.transform = 'rotate(0deg) scale(1)';
-                }, 250);
-                
-                // Guardar la skin seleccionada en localStorage
-                localStorage.setItem('selectedSkin', currentSkinIndex);
-                
-                // Mostrar mensaje de confirmación
-                showSkinChangeMessage();
-            }
-            
-            function showSkinChangeMessage() {
-                const skin = skins[currentSkinIndex];
+            // Función para mostrar mensaje de confirmación
+            function showSkinChangeMessage(skinName) {
                 const message = document.createElement('div');
                 message.className = 'fixed top-4 right-4 bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg z-50 transform transition-all duration-300';
-                message.textContent = `¡Skin ${skin.name} aplicada!`;
+                message.textContent = `¡Skin ${skinName} aplicada!`;
                 document.body.appendChild(message);
                 
                 setTimeout(() => {
                     message.style.transform = 'translateX(100%)';
                     setTimeout(() => {
-                        document.body.removeChild(message);
+                        if (document.body.contains(message)) {
+                            document.body.removeChild(message);
+                        }
                     }, 300);
                 }, 2000);
             }
             
-            // Event listeners
-            if (prevSkinBtn) prevSkinBtn.addEventListener('click', prevSkin);
-            if (nextSkinBtn) nextSkinBtn.addEventListener('click', nextSkin);
-            if (changeSkinBtn) changeSkinBtn.addEventListener('click', changeSkin);
+            // Event listeners para las opciones de skin
+            skinOptions.forEach(option => {
+                option.addEventListener('click', () => {
+                    const skinId = parseInt(option.getAttribute('data-skin'));
+                    selectSkin(skinId);
+                });
+            });
             
             // Cargar skin guardada
-            const savedSkin = localStorage.getItem('selectedSkin');
-            if (savedSkin !== null) {
-                currentSkinIndex = parseInt(savedSkin);
+            const savedSkinId = localStorage.getItem('selectedSkinId');
+            console.log(`[SKIN_SYSTEM] Skin guardada en localStorage:`, savedSkinId);
+            if (savedSkinId !== null) {
+                selectedSkinId = parseInt(savedSkinId);
+                console.log(`[SKIN_SYSTEM] Skin cargada: ${selectedSkinId}`);
+            } else {
+                console.log(`[SKIN_SYSTEM] No hay skin guardada, usando skin por defecto: 1`);
             }
             
-            // Inicializar con la primera skin
-            updateSkin();
+            // Inicializar visualización
+            updateSkinDisplay();
             
-            // Cambio automático de skins cada 3 segundos
-            setInterval(() => {
-                nextSkin();
-            }, 3000);
+            // Función para obtener los datos de la skin seleccionada
+            function getSelectedSkinData() {
+                const skin = skins.find(s => s.id === selectedSkinId);
+                const skinData = {
+                    skinId: skin.id,
+                    skinName: skin.name,
+                    skinHue: skin.hue
+                };
+                console.log(`[SKIN_SYSTEM] Obteniendo datos de skin:`, skinData);
+                return skinData;
+            }
             
-            // Agregar estilos CSS para transiciones
-            const style = document.createElement('style');
-            style.textContent = `
-                #currentSkin {
-                    transition: opacity 0.3s ease-in-out;
-                }
-                #skinPreview {
-                    transition: transform 0.5s ease-in-out;
-                }
-            `;
-            document.head.appendChild(style);
+            // Exponer funciones globalmente
+            window.getSelectedSkinData = getSelectedSkinData;
+            window.selectSkin = selectSkin;
         }
 
         function initializeCustomizeCanvas() {
