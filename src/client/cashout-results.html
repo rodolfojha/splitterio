@@ -1,417 +1,269 @@
 <!DOCTYPE html>
 <html lang="es">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Resultados del Cashout - SplitterIO</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+<head>    
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎮</text></svg>">
+    
+    <!-- Incluimos Tailwind CSS para el estilizado -->
+    <script src="https://cdn.tailwindcss.com"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Resultado - SplitterIO</title>
+<style>
+    html, body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        background: #0a0a0f;
+        overflow: hidden;
+        font-family: 'Segoe UI', sans-serif;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        color: #fff;
+    }
 
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 20px;
-        }
+    /* Fondo animado */
+    body::before, body::after {
+        content: '';
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        width: 8em;
+        height: 8em;
+        border-radius: 50%;
+        background: radial-gradient(circle, hsla(40, 100%, 50%, 0.25) 25%, transparent 70%);
+        mix-blend-mode: screen;
+        animation: move 45s infinite alternate ease-in-out;
+    }
 
-        .container {
-            max-width: 600px;
-            width: 100%;
-            background: white;
-            border-radius: 20px;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
-            overflow: hidden;
-            animation: slideIn 0.6s ease-out;
-        }
+    body::after {
+        background: radial-gradient(circle, hsla(55, 100%, 60%, 0.2) 25%, transparent 70%);
+        animation-duration: 50s;
+        animation-delay: -25s;
+    }
 
-        @keyframes slideIn {
-            from {
-                opacity: 0;
-                transform: translateY(30px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
+    @keyframes move {
+        from { transform: rotate(0deg) scale(8) translateX(-60px); }
+        to { transform: rotate(360deg) scale(12) translateX(60px); }
+    }
 
-        .header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 40px 30px;
-            text-align: center;
-            position: relative;
-        }
+    .result-card {
+        position: relative;
+        background: linear-gradient(145deg, rgba(25, 25, 35, 0.25), rgba(15, 15, 25, 0.75));
+        border-radius: 20px;
+        padding: 40px 30px;
+        width: 360px;
+        text-align: center;
+        z-index: 2;
+        border: 2px solid rgba(255, 215, 0, 0.2);
+        backdrop-filter: blur(8px);
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+    }
 
-        .header::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><pattern id="grain" width="100" height="100" patternUnits="userSpaceOnUse"><circle cx="25" cy="25" r="1" fill="white" opacity="0.1"/><circle cx="75" cy="75" r="1" fill="white" opacity="0.1"/><circle cx="50" cy="10" r="0.5" fill="white" opacity="0.1"/><circle cx="10" cy="60" r="0.5" fill="white" opacity="0.1"/><circle cx="90" cy="40" r="0.5" fill="white" opacity="0.1"/></pattern></defs><rect width="100" height="100" fill="url(%23grain)"/></svg>');
-            opacity: 0.3;
-        }
+    .result-card h1 {
+        color: #ffcc33;
+        font-size: 2.5rem;
+        font-weight: 800;
+    }
 
-        .header h1 {
-            font-size: 2.5em;
-            margin-bottom: 10px;
-            position: relative;
-            z-index: 1;
-        }
+    .prize {
+        font-size: 2.2rem;
+        font-weight: bold;
+        color: #00ff8c;
+        margin-bottom: 25px;
+    }
 
-        .header p {
-            font-size: 1.1em;
-            opacity: 0.9;
-            position: relative;
-            z-index: 1;
-        }
 
-        .content {
-            padding: 40px 30px;
-        }
+    .trophy {
+        width: 50px;
+        margin-bottom: 15px;
+    }
 
-        .result-card {
-            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-            border-radius: 15px;
-            padding: 30px;
-            margin-bottom: 30px;
-            border: 2px solid #dee2e6;
-            position: relative;
-            overflow: hidden;
-        }
+    /* Stats */
+    .stats {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        margin-bottom: 20px;
+    }
 
-        .result-card::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            height: 4px;
-            background: linear-gradient(90deg, #28a745, #20c997, #17a2b8);
-        }
+    .stat {
+        flex: 1;
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 12px;
+        padding: 10px 5px;
+        text-align: center;
+        transition: 0.3s;
+    }
+    .button {
+      color: #ff9900;
+      z-index: 200;
+      font-size: 17px;
+      background-color: transparent; /* naranja brillante base */
+      border: 4px solid #ff9900;
+      border-radius: 115px;
+      cursor: pointer;
+      padding: 10px;
+      box-shadow: 0px 6px 0px #cc7a00;
+      transition: all 0.1s ease-in-out;
+      font-weight: bold;
+    }
 
-        .result-title {
-            font-size: 1.8em;
-            color: #333;
-            margin-bottom: 20px;
-            text-align: center;
-            font-weight: 700;
-        }
+    .button.inactive {
+      color: #FFF;
+      font-size: 17px;
+      background-color: transparent;
+      border: 4px solid #858585;
+      border-radius: 115px;
+      padding: 10px 50px;
+      box-shadow: 0px 6px 0px #5E5E5E;
+      font-weight: bold;
+    }
 
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
-            margin-bottom: 30px;
-        }
+    .button.selected {
+      color: #000;
+      background-color: #ffd24d; /* amarillo cálido */
+      border-color: #ffb300;
+    }
 
-        .stat-item {
-            background: white;
-            padding: 20px;
-            border-radius: 10px;
-            text-align: center;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-            border: 1px solid #e9ecef;
-        }
+    .button:hover {
+      box-shadow: 0px 4px 0px #cc7a00;
+      position: relative;
+      background: rgba(255, 168, 0, 0.15);
+      top: 1px;
+    }
 
-        .stat-label {
-            font-size: 0.9em;
-            color: #6c757d;
-            margin-bottom: 8px;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
+    .button:active {
+      box-shadow: 0px 2px 0px #cc7a00;
+      position: relative;
+      top: 2px;
+    }
 
-        .stat-value {
-            font-size: 1.8em;
-            font-weight: 700;
-            color: #333;
-        }
+    .button:hover.selected {
+      box-shadow: 0px 4px 0px #cc7a00;
+      background-color: #ffcc33;
+      top: 1px;
+    }
 
-        .stat-value.win {
-            color: #28a745;
-        }
+    .button:active.selected {
+      box-shadow: 0px 2px 0px #cc7a00;
+      top: 2px;
+    }
 
-        .stat-value.loss {
-            color: #dc3545;
-        }
+    .button:hover.inactive {
+      box-shadow: 0px 4px 0px #5E5E5E;
+      background: rgba(255, 255, 255, 0.05);
+      top: 1px;
+    }
 
-        .stat-value.neutral {
-            color: #6c757d;
-        }
+    .button:active.inactive {
+      box-shadow: 0px 2px 0px #5E5E5E;
+      top: 2px;
+    }
+    .stat:hover {
+        background: rgba(255, 255, 255, 0.1);
+    }
 
-        .commission-breakdown {
-            background: white;
-            border-radius: 10px;
-            padding: 25px;
-            margin-bottom: 30px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-            border: 1px solid #e9ecef;
-        }
+    .stat-icon {
+        font-size: 1.2rem;
+        display: block;
+        margin-bottom: 6px;
+        opacity: 0.8;
+    }
 
-        .commission-title {
-            font-size: 1.3em;
-            color: #333;
-            margin-bottom: 15px;
-            text-align: center;
-            font-weight: 600;
-        }
+    .stat-value {
+        font-weight: bold;
+        font-size: 1.1rem;
+        color: #fff;
+    }
 
-        .commission-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 12px 0;
-            border-bottom: 1px solid #f1f3f4;
-        }
+    .stat-label {
+        font-size: 0.8rem;
+        color: #bbb;
+    }
 
-        .commission-item:last-child {
-            border-bottom: none;
-            font-weight: 700;
-            font-size: 1.1em;
-            color: #333;
-            border-top: 2px solid #dee2e6;
-            margin-top: 10px;
-            padding-top: 15px;
-        }
+    /* Botones */
+    .buttons {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+    }
 
-        .commission-label {
-            color: #6c757d;
-        }
+    .btn {
+        flex: 1;
+        background: #222;
+        color: #ddd;
+        border: 1px solid #444;
+        border-radius: 8px;
+        padding: 10px 0;
+        font-size: 0.9rem;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        text-decoration: none;
+        text-align: center;
+    }
 
-        .commission-amount {
-            font-weight: 600;
-            color: #333;
-        }
+    .btn:hover {
+        background: #333;
+        color: #fff;
+    }
 
-        .commission-amount.deduction {
-            color: #dc3545;
-        }
+    .disclaimer {
+        margin-top: 10px;
+        font-size: 0.75rem;
+        color: #666;
+    }
+    .trophy-icon {
+      font-size: 64px;
+      animation: bounce-glow 2s infinite;
+      display: inline-block;
+    }
 
-        .commission-amount.addition {
-            color: #28a745;
-        }
-
-        .button-container {
-            text-align: center;
-            margin-top: 30px;
-        }
-
-        .btn {
-            display: inline-block;
-            padding: 15px 30px;
-            border: none;
-            border-radius: 10px;
-            font-size: 16px;
-            font-weight: 600;
-            text-decoration: none;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            margin: 0 10px;
-        }
-
-        .btn-primary {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-        }
-
-        .btn-primary:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
-        }
-
-        .btn-secondary {
-            background: #6c757d;
-            color: white;
-        }
-
-        .btn-secondary:hover {
-            background: #5a6268;
-            transform: translateY(-2px);
-        }
-
-        .game-info {
-            background: #e7f3ff;
-            border: 1px solid #b3d9ff;
-            border-radius: 10px;
-            padding: 20px;
-            margin-bottom: 20px;
-        }
-
-        .game-info h3 {
-            color: #0066cc;
-            margin-bottom: 10px;
-            font-size: 1.2em;
-        }
-
-        .game-info p {
-            color: #333;
-            line-height: 1.6;
-            margin-bottom: 8px;
-        }
-
-        .loading {
-            text-align: center;
-            padding: 40px;
-            color: #6c757d;
-        }
-
-        .loading .spinner {
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #667eea;
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 20px;
-        }
-
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-
-        .error-message {
-            background: #f8d7da;
-            color: #721c24;
-            padding: 15px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-            border: 1px solid #f5c6cb;
-            text-align: center;
-        }
-
-        @media (max-width: 768px) {
-            .container {
-                margin: 10px;
-                border-radius: 15px;
-            }
-
-            .header {
-                padding: 30px 20px;
-            }
-
-            .header h1 {
-                font-size: 2em;
-            }
-
-            .content {
-                padding: 30px 20px;
-            }
-
-            .stats-grid {
-                grid-template-columns: 1fr;
-                gap: 15px;
-            }
-
-            .btn {
-                display: block;
-                margin: 10px 0;
-                width: 100%;
-            }
-        }
-    </style>
+    @keyframes bounce-glow {
+      0%, 100% {
+        transform: translateY(0) scale(1);
+      }
+      50% {
+        transform: scale(1.05);
+      }
+    }
+</style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>🎮 Resultados del Cashout</h1>
-            <p>Resumen de tu partida y ganancias</p>
-        </div>
-
-        <div class="content">
-            <div id="loading" class="loading">
-                <div class="spinner"></div>
-                <p>Cargando resultados...</p>
+    <div class="result-card w-full p-10">
+        <!-- Icono de copa (SVG inline) -->
+        <div class="trophy-icon" id="icon">🏆</div>
+        <h1 id="resultTitle">Victory!</h1>
+        <div class="prize" id="prize">22</div>
+        <div class="stats">
+            <div class="stat">
+                <div class="stat-icon">⏱</div>
+                <div class="stat-value" id="game-duration">34</div>
+                <div class="stat-label">Time Survived</div>
             </div>
-
-            <div id="error" class="error-message" style="display: none;">
-                <p>Error al cargar los resultados. Por favor, intenta de nuevo.</p>
+            <div class="stat">
+                <div class="stat-icon">🍕</div>
+                <div class="stat-value" id="final-mass">1</div>
+                <div class="stat-label">Final Weight</div>
             </div>
-
-            <div id="results" style="display: none;">
-                <!-- Información del juego -->
-                <div class="game-info">
-                    <h3>📊 Información de la Partida</h3>
-                    <p><strong>Jugador:</strong> <span id="playerName">-</span></p>
-                    <p><strong>Apuesta inicial:</strong> $<span id="initialBet">-</span></p>
-                    <p><strong>Masa final:</strong> <span id="finalMass">-</span></p>
-                    <p><strong>Duración:</strong> <span id="gameDuration">-</span></p>
-                </div>
-
-                <!-- Resultado principal -->
-                <div class="result-card">
-                    <div class="result-title" id="resultTitle">¡Cashout Completado!</div>
-                    
-                    <div class="stats-grid">
-                        <div class="stat-item">
-                            <div class="stat-label">Dinero Ganado</div>
-                            <div class="stat-value win" id="totalWinnings">$0.00</div>
-                        </div>
-                        <div class="stat-item">
-                            <div class="stat-label">Comisión Pagada</div>
-                            <div class="stat-value neutral" id="totalCommission">$0.00</div>
-                        </div>
-                        <div class="stat-item">
-                            <div class="stat-label">Balance Final</div>
-                            <div class="stat-value win" id="finalBalance">$0.00</div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Desglose de comisiones -->
-                <div class="commission-breakdown">
-                    <div class="commission-title">💰 Desglose de Comisiones</div>
-                    <div class="commission-item">
-                        <span class="commission-label">Apuesta inicial:</span>
-                        <span class="commission-amount addition" id="commissionInitialBet">$0.00</span>
-                    </div>
-                    <div class="commission-item">
-                        <span class="commission-label">Ganancias brutas:</span>
-                        <span class="commission-amount addition" id="commissionGrossWinnings">$0.00</span>
-                    </div>
-                    <div class="commission-item">
-                        <span class="commission-label">Comisión (10%):</span>
-                        <span class="commission-amount deduction" id="commissionDeduction">-$0.00</span>
-                    </div>
-                    <div class="commission-item">
-                        <span class="commission-label">Total recibido:</span>
-                        <span class="commission-amount addition" id="commissionNetWinnings">$0.00</span>
-                    </div>
-                </div>
-
-                <!-- Botones de acción -->
-                <div class="button-container">
-                    <a href="index.html" class="btn btn-primary" id="dashboardBtn">
-                        🏠 Ir al Dashboard
-                    </a>
-                    <a href="index.html" class="btn btn-secondary" id="playAgainBtn">
-                        🎮 Jugar Otra Vez
-                    </a>
-                </div>
+            <div class="stat">
+                <div class="stat-icon">🪙</div>
+                <div class="stat-value" id="actual-balance">135</div>
+                <div class="stat-label">Actual Balance</div>
             </div>
         </div>
+        <div class="buttons w-full flex gap-2 mb-7">
+            <a href="index.html" class="button selected w-1/2"><i class="fa-solid fa-house mr-3"></i>Home</a>
+            <a href="index.html" class="button w-1/2"><i class="fa-solid fa-arrows-rotate mr-3"></i>Try Again</a>
+        </div>
+        <div class="disclaimer">* 10% house fee already deducted</div>
     </div>
-
-    <script>
+        <script>
         // Función para formatear números como moneda
         function formatCurrency(amount) {
-            return new Intl.NumberFormat('en-US', {
-                style: 'currency',
-                currency: 'USD',
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2
-            }).format(amount);
+            return `$${amount}`;
         }
 
         // Función para formatear tiempo
@@ -446,38 +298,24 @@
                 const totalWinnings = parseFloat(getUrlParameter('winnings')) || 0;
                 const commission = parseFloat(getUrlParameter('commission')) || 0;
                 const finalBalance = parseFloat(getUrlParameter('balance')) || 0;
-
-                // Calcular valores
-                const grossWinnings = totalWinnings + commission;
-                const netWinnings = totalWinnings;
+                const wasEaten = (initialBet === totalWinnings);
 
                 // Actualizar la interfaz
-                document.getElementById('playerName').textContent = playerName;
-                document.getElementById('initialBet').textContent = formatCurrency(initialBet);
-                document.getElementById('finalMass').textContent = finalMass.toFixed(0);
-                document.getElementById('gameDuration').textContent = formatDuration(gameDuration);
+                document.getElementById('final-mass').textContent = finalMass.toFixed(0);
+                document.getElementById('game-duration').textContent = formatDuration(gameDuration);
+                document.getElementById('actual-balance').textContent = formatCurrency(finalBalance);
                 
-                document.getElementById('totalWinnings').textContent = formatCurrency(totalWinnings);
-                document.getElementById('totalCommission').textContent = formatCurrency(commission);
-                document.getElementById('finalBalance').textContent = formatCurrency(finalBalance);
-
-                // Actualizar desglose de comisiones
-                document.getElementById('commissionInitialBet').textContent = formatCurrency(initialBet);
-                document.getElementById('commissionGrossWinnings').textContent = formatCurrency(grossWinnings);
-                document.getElementById('commissionDeduction').textContent = formatCurrency(-commission);
-                document.getElementById('commissionNetWinnings').textContent = formatCurrency(netWinnings);
+                document.getElementById('prize').textContent = formatCurrency(totalWinnings);
 
                 // Actualizar título según el resultado
                 const resultTitle = document.getElementById('resultTitle');
-                if (totalWinnings > initialBet) {
-                    resultTitle.textContent = '🎉 ¡Felicidades! Has Ganado';
-                    resultTitle.style.color = '#28a745';
-                } else if (totalWinnings === initialBet) {
-                    resultTitle.textContent = '😐 Empate - Has Recuperado tu Apuesta';
+                if (wasEaten) {
+                    resultTitle.textContent = 'Tie';
+                    document.getElementById("icon").textContent = "🫥";
                     resultTitle.style.color = '#6c757d';
                 } else {
-                    resultTitle.textContent = '😔 Has Perdido - Mejor Suerte la Próxima';
-                    resultTitle.style.color = '#dc3545';
+                    resultTitle.textContent = 'Victory!';
+                    resultTitle.style.color = '#28a745';
                 }
 
                 // Ocultar loading y mostrar resultados
@@ -494,18 +332,6 @@
         // Cargar resultados cuando la página esté lista
         document.addEventListener('DOMContentLoaded', function() {
             loadResults();
-        });
-
-        // Manejar clics en botones
-        document.getElementById('dashboardBtn').addEventListener('click', function(e) {
-            e.preventDefault();
-            // Aquí podrías redirigir a un dashboard específico si lo tienes
-            window.location.href = 'index.html';
-        });
-
-        document.getElementById('playAgainBtn').addEventListener('click', function(e) {
-            e.preventDefault();
-            window.location.href = 'index.html';
         });
     </script>
 </body>

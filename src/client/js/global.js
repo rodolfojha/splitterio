@@ -37,7 +37,7 @@ module.exports = {
     cashOutProgress: 0,
     isCashOutActive: false,
     cashOutStartTime: 0,
-    cashOutDuration: 2000, // 2 seconds to complete cash out
+    cashOutDuration: 5000, // 5 seconds to complete cash out
     // Compass system variables
     showCompass: false, // Desactivada por defecto, solo se activa en combate
     radarData: [], // Datos de todos los jugadores para el radar

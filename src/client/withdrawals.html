@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Retiros - Splitta</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Arial', sans-serif;
+            background: #000;
+            color: #fff;
+            min-height: 100vh;
+            background: radial-gradient(circle at center, #1a1a1a 0%, #000 100%);
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #00ff88, #00cc6a);
+            padding: 20px;
+            border-radius: 15px;
+            margin-bottom: 30px;
+            text-align: center;
+            box-shadow: 0 8px 32px rgba(0, 255, 136, 0.3);
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+        }
+
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        .content {
+            display: flex;
+            gap: 30px;
+            flex-direction: column;
+        }
+
+        @media (min-width: 1024px) {
+            .content {
+                flex-direction: row;
+            }
+        }
+
+        .left-column {
+            flex: 1;
+        }
+
+        .right-column {
+            flex: 1;
+        }
+
+        .card {
+            background: linear-gradient(135deg, #1a1a1a, #2a2a2a);
+            border: 2px solid #00ff88;
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 20px;
+            box-shadow: 0 8px 32px rgba(0, 255, 136, 0.2);
+        }
+
+        .card h2 {
+            color: #00ff88;
+            margin-bottom: 20px;
+            font-size: 1.5em;
+            text-align: center;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #00ff88;
+            font-weight: bold;
+        }
+
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #333;
+            border-radius: 8px;
+            background: #1a1a1a;
+            color: #fff;
+            font-size: 16px;
+            transition: border-color 0.3s ease;
+        }
+
+        .form-group input:focus, .form-group select:focus {
+            outline: none;
+            border-color: #00ff88;
+            box-shadow: 0 0 10px rgba(0, 255, 136, 0.3);
+        }
+
+        .crypto-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .crypto-option {
+            background: #1a1a1a;
+            border: 2px solid #333;
+            border-radius: 8px;
+            padding: 15px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .crypto-option:hover {
+            border-color: #00ff88;
+            background: #2a2a2a;
+        }
+
+        .crypto-option.selected {
+            border-color: #00ff88;
+            background: linear-gradient(135deg, #00ff88, #00cc6a);
+            color: #000;
+        }
+
+        .crypto-option img {
+            width: 32px;
+            height: 32px;
+            margin-bottom: 8px;
+        }
+
+        .crypto-option .name {
+            font-weight: bold;
+            font-size: 14px;
+        }
+
+        .crypto-option .symbol {
+            font-size: 12px;
+            opacity: 0.8;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #00ff88, #00cc6a);
+            color: #000;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            width: 100%;
+            margin-top: 10px;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0, 255, 136, 0.4);
+        }
+
+        .btn:disabled {
+            background: #666;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .btn-secondary {
+            background: linear-gradient(135deg, #666, #444);
+            color: #fff;
+        }
+
+        .btn-secondary:hover {
+            box-shadow: 0 8px 25px rgba(102, 102, 102, 0.4);
+        }
+
+        .balance-info {
+            background: linear-gradient(135deg, #2a2a2a, #1a1a1a);
+            border: 2px solid #00ff88;
+            border-radius: 15px;
+            padding: 20px;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .balance-amount {
+            font-size: 2.5em;
+            color: #00ff88;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        .balance-label {
+            font-size: 1.1em;
+            opacity: 0.8;
+        }
+
+        .withdrawal-history {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .withdrawal-item {
+            background: #1a1a1a;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .withdrawal-info {
+            flex: 1;
+        }
+
+        .withdrawal-amount {
+            font-size: 1.2em;
+            font-weight: bold;
+            color: #00ff88;
+        }
+
+        .withdrawal-details {
+            font-size: 0.9em;
+            opacity: 0.8;
+            margin-top: 5px;
+        }
+
+        .withdrawal-status {
+            padding: 5px 10px;
+            border-radius: 15px;
+            font-size: 0.8em;
+            font-weight: bold;
+        }
+
+        .status-pending {
+            background: #ffaa00;
+            color: #000;
+        }
+
+        .status-processing {
+            background: #0088ff;
+            color: #fff;
+        }
+
+        .status-completed {
+            background: #00ff88;
+            color: #000;
+        }
+
+        .status-failed {
+            background: #ff4444;
+            color: #fff;
+        }
+
+        .alert {
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-weight: bold;
+        }
+
+        .alert-success {
+            background: rgba(0, 255, 136, 0.2);
+            border: 1px solid #00ff88;
+            color: #00ff88;
+        }
+
+        .alert-error {
+            background: rgba(255, 68, 68, 0.2);
+            border: 1px solid #ff4444;
+            color: #ff4444;
+        }
+
+        .alert-info {
+            background: rgba(0, 136, 255, 0.2);
+            border: 1px solid #0088ff;
+            color: #0088ff;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .spinner {
+            border: 3px solid #333;
+            border-top: 3px solid #00ff88;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .back-button {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            background: linear-gradient(135deg, #666, #444);
+            color: #fff;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s ease;
+        }
+
+        .back-button:hover {
+            background: linear-gradient(135deg, #777, #555);
+            transform: translateY(-2px);
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 10px;
+            }
+            
+            .header h1 {
+                font-size: 2em;
+            }
+            
+            .content {
+                flex-direction: column;
+            }
+            
+            .crypto-grid {
+                grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+            }
+        }
+    </style>
+</head>
+<body>
+    <button class="back-button" onclick="window.location.href='/'">← Volver al Juego</button>
+    
+    <div class="container">
+        <div class="header">
+            <h1>💰 Retiros</h1>
+            <p>Retira tus ganancias a tu wallet de criptomonedas</p>
+        </div>
+
+        <div class="content">
+            <div class="left-column">
+                <!-- Información del Balance -->
+                <div class="balance-info">
+                    <div class="balance-amount" id="userBalance">$0.00</div>
+                    <div class="balance-label">Balance Disponible</div>
+                </div>
+
+                <!-- Formulario de Retiro -->
+                <div class="card">
+                    <h2>🔄 Crear Retiro</h2>
+                    
+                    <div id="alertContainer"></div>
+                    
+                    <form id="withdrawalForm">
+                        <div class="form-group">
+                            <label for="amount">Monto a Retirar (USD)</label>
+                            <input type="number" id="amount" name="amount" min="10" step="0.01" placeholder="Mínimo $10.00" required>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Criptomoneda</label>
+                            <div class="crypto-grid" id="cryptoGrid">
+                                <!-- Las opciones se cargarán dinámicamente -->
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="walletAddress">Dirección de Wallet</label>
+                            <input type="text" id="walletAddress" name="walletAddress" placeholder="Ingresa tu dirección de wallet" required>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="estimatedAmount">Monto Estimado en Cripto</label>
+                            <input type="text" id="estimatedAmount" readonly placeholder="Se calculará automáticamente">
+                        </div>
+
+                        <button type="submit" class="btn" id="submitBtn">💸 Crear Retiro</button>
+                    </form>
+
+                    <div class="loading" id="loading">
+                        <div class="spinner"></div>
+                        <p>Procesando retiro...</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="right-column">
+                <!-- Historial de Retiros -->
+                <div class="card">
+                    <h2>📋 Historial de Retiros</h2>
+                    <div class="withdrawal-history" id="withdrawalHistory">
+                        <!-- El historial se cargará dinámicamente -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let selectedCrypto = null;
+        let currentBalance = 0;
+
+        // Criptomonedas disponibles con sus símbolos
+        const cryptoOptions = [
+            { symbol: 'btc', name: 'Bitcoin', icon: '₿' },
+            { symbol: 'eth', name: 'Ethereum', icon: 'Ξ' },
+            { symbol: 'usdt', name: 'Tether', icon: '₮' },
+            { symbol: 'doge', name: 'Dogecoin', icon: 'Ð' },
+            { symbol: 'ltc', name: 'Litecoin', icon: 'Ł' },
+            { symbol: 'bnb', name: 'BNB', icon: 'BNB' },
+            { symbol: 'ada', name: 'Cardano', icon: '₳' },
+            { symbol: 'xrp', name: 'Ripple', icon: 'XRP' }
+        ];
+
+        // Inicializar la página
+        document.addEventListener('DOMContentLoaded', function() {
+            loadUserBalance();
+            loadCryptoOptions();
+            loadWithdrawalHistory();
+            setupEventListeners();
+        });
+
+        // Cargar balance del usuario
+        async function loadUserBalance() {
+            try {
+                const response = await fetch('/api/user-info');
+                if (response.ok) {
+                    const userData = await response.json();
+                    currentBalance = userData.balance || 0;
+                    document.getElementById('userBalance').textContent = `$${currentBalance.toFixed(2)}`;
+                }
+            } catch (error) {
+                console.error('Error cargando balance:', error);
+                showAlert('Error cargando balance del usuario', 'error');
+            }
+        }
+
+        // Cargar opciones de criptomonedas
+        function loadCryptoOptions() {
+            const cryptoGrid = document.getElementById('cryptoGrid');
+            cryptoGrid.innerHTML = '';
+
+            cryptoOptions.forEach(crypto => {
+                const option = document.createElement('div');
+                option.className = 'crypto-option';
+                option.innerHTML = `
+                    <div class="icon">${crypto.icon}</div>
+                    <div class="name">${crypto.name}</div>
+                    <div class="symbol">${crypto.symbol.toUpperCase()}</div>
+                `;
+                
+                option.addEventListener('click', () => selectCrypto(crypto));
+                cryptoGrid.appendChild(option);
+            });
+        }
+
+        // Seleccionar criptomoneda
+        function selectCrypto(crypto) {
+            // Remover selección anterior
+            document.querySelectorAll('.crypto-option').forEach(opt => {
+                opt.classList.remove('selected');
+            });
+
+            // Seleccionar nueva opción
+            event.target.closest('.crypto-option').classList.add('selected');
+            selectedCrypto = crypto.symbol;
+
+            // Calcular estimación si hay monto
+            const amount = document.getElementById('amount').value;
+            if (amount && amount > 0) {
+                calculateEstimate(amount, crypto.symbol);
+            }
+        }
+
+        // Calcular estimación
+        async function calculateEstimate(amount, crypto) {
+            try {
+                const response = await fetch(`/api/estimate?amount=${amount}&crypto=${crypto}`);
+                if (response.ok) {
+                    const data = await response.json();
+                    document.getElementById('estimatedAmount').value = `${data.estimated_amount} ${crypto.toUpperCase()}`;
+                }
+            } catch (error) {
+                console.error('Error calculando estimación:', error);
+                document.getElementById('estimatedAmount').value = 'Error calculando estimación';
+            }
+        }
+
+        // Configurar event listeners
+        function setupEventListeners() {
+            const form = document.getElementById('withdrawalForm');
+            const amountInput = document.getElementById('amount');
+
+            // Calcular estimación cuando cambie el monto
+            amountInput.addEventListener('input', function() {
+                if (selectedCrypto && this.value > 0) {
+                    calculateEstimate(this.value, selectedCrypto);
+                } else {
+                    document.getElementById('estimatedAmount').value = '';
+                }
+            });
+
+            // Manejar envío del formulario
+            form.addEventListener('submit', handleWithdrawal);
+        }
+
+        // Manejar retiro
+        async function handleWithdrawal(event) {
+            event.preventDefault();
+
+            const amount = parseFloat(document.getElementById('amount').value);
+            const walletAddress = document.getElementById('walletAddress').value;
+
+            // Validaciones
+            if (!selectedCrypto) {
+                showAlert('Por favor selecciona una criptomoneda', 'error');
+                return;
+            }
+
+            if (amount < 10) {
+                showAlert('El monto mínimo de retiro es $10 USD', 'error');
+                return;
+            }
+
+            if (amount > currentBalance) {
+                showAlert('Balance insuficiente para este retiro', 'error');
+                return;
+            }
+
+            if (!walletAddress.trim()) {
+                showAlert('Por favor ingresa una dirección de wallet válida', 'error');
+                return;
+            }
+
+            // Mostrar loading
+            showLoading(true);
+
+            try {
+                const response = await fetch('/api/create-withdrawal', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        amount: amount,
+                        crypto: selectedCrypto,
+                        wallet_address: walletAddress
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    showAlert('Retiro creado exitosamente. Se procesará en breve.', 'success');
+                    form.reset();
+                    document.getElementById('estimatedAmount').value = '';
+                    selectedCrypto = null;
+                    document.querySelectorAll('.crypto-option').forEach(opt => {
+                        opt.classList.remove('selected');
+                    });
+                    
+                    // Actualizar balance y historial
+                    await loadUserBalance();
+                    await loadWithdrawalHistory();
+                } else {
+                    showAlert(data.error || 'Error creando retiro', 'error');
+                }
+            } catch (error) {
+                console.error('Error creando retiro:', error);
+                showAlert('Error de conexión. Intenta nuevamente.', 'error');
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        // Cargar historial de retiros
+        async function loadWithdrawalHistory() {
+            try {
+                const response = await fetch('/api/user-withdrawals');
+                if (response.ok) {
+                    const data = await response.json();
+                    displayWithdrawalHistory(data.withdrawals || []);
+                }
+            } catch (error) {
+                console.error('Error cargando historial:', error);
+            }
+        }
+
+        // Mostrar historial de retiros
+        function displayWithdrawalHistory(withdrawals) {
+            const historyContainer = document.getElementById('withdrawalHistory');
+            
+            if (withdrawals.length === 0) {
+                historyContainer.innerHTML = '<p style="text-align: center; opacity: 0.7;">No hay retiros aún</p>';
+                return;
+            }
+
+            historyContainer.innerHTML = withdrawals.map(withdrawal => `
+                <div class="withdrawal-item">
+                    <div class="withdrawal-info">
+                        <div class="withdrawal-amount">$${withdrawal.amount}</div>
+                        <div class="withdrawal-details">
+                            ${withdrawal.crypto_currency.toUpperCase()} • ${withdrawal.wallet_address.substring(0, 8)}...${withdrawal.wallet_address.substring(withdrawal.wallet_address.length - 8)}
+                            <br>
+                            ${new Date(withdrawal.created_at).toLocaleDateString()} ${new Date(withdrawal.created_at).toLocaleTimeString()}
+                        </div>
+                    </div>
+                    <div class="withdrawal-status status-${withdrawal.status}">
+                        ${getStatusText(withdrawal.status)}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // Obtener texto del estado
+        function getStatusText(status) {
+            const statusMap = {
+                'pending': 'Pendiente',
+                'processing': 'Procesando',
+                'completed': 'Completado',
+                'failed': 'Fallido'
+            };
+            return statusMap[status] || status;
+        }
+
+        // Mostrar alerta
+        function showAlert(message, type) {
+            const alertContainer = document.getElementById('alertContainer');
+            const alert = document.createElement('div');
+            alert.className = `alert alert-${type}`;
+            alert.textContent = message;
+            
+            alertContainer.innerHTML = '';
+            alertContainer.appendChild(alert);
+
+            // Auto-remover después de 5 segundos
+            setTimeout(() => {
+                alert.remove();
+            }, 5000);
+        }
+
+        // Mostrar/ocultar loading
+        function showLoading(show) {
+            const loading = document.getElementById('loading');
+            const submitBtn = document.getElementById('submitBtn');
+            
+            if (show) {
+                loading.style.display = 'block';
+                submitBtn.disabled = true;
+            } else {
+                loading.style.display = 'none';
+                submitBtn.disabled = false;
+            }
+        }
+    </script>
+</body>
+</html>

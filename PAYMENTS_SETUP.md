@@ -124,3 +124,5 @@ Los pagos se registran en la tabla `payments` con los siguientes estados:
 - Se recomienda usar criptomonedas con confirmaciones rápidas para mejor experiencia de usuario
 
 
+
+

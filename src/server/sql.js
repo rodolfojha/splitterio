@@ -164,6 +164,99 @@ const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE | sqlite3.OPEN_CR
         }
       });
 
+      // Nueva tabla para retiros con NOWPayments
+      db.run(`CREATE TABLE IF NOT EXISTS withdrawals (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        withdrawal_id TEXT UNIQUE,
+        payout_id TEXT,
+        amount REAL,
+        currency TEXT DEFAULT 'USD',
+        crypto_currency TEXT,
+        crypto_amount REAL,
+        wallet_address TEXT,
+        status TEXT DEFAULT 'pending', -- 'pending', 'processing', 'completed', 'failed', 'cancelled'
+        transaction_hash TEXT,
+        fee REAL DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME,
+        FOREIGN KEY (user_id) REFERENCES users (id)
+      )`, (err) => {
+        if (err) {
+          console.error(err);
+        }
+        else {
+          console.log("Created withdrawals table");
+        }
+      });
+
+      // Agregar columna payout_id si no existe
+      db.run(`ALTER TABLE withdrawals ADD COLUMN payout_id TEXT`, (err) => {
+        if (err && !err.message.includes('duplicate column name')) {
+          console.error('Error adding payout_id column:', err);
+        } else {
+          console.log("Added payout_id column to withdrawals table");
+        }
+      });
+
+      // Nueva tabla para estadísticas globales
+      db.run(`CREATE TABLE IF NOT EXISTS global_stats (
+        id INTEGER PRIMARY KEY,
+        total_winnings REAL DEFAULT 0,
+        total_bets_placed REAL DEFAULT 0,
+        total_games_played INTEGER DEFAULT 0,
+        last_updated DATETIME DEFAULT CURRENT_TIMESTAMP
+      )`, (err) => {
+        if (err) {
+          console.error(err);
+        }
+        else {
+          console.log("Created global_stats table");
+        }
+      });
+
+      // Insertar registro inicial si no existe
+      db.run(`INSERT OR IGNORE INTO global_stats (id, total_winnings, total_bets_placed, total_games_played) VALUES (1, 0, 0, 0)`, (err) => {
+        if (err) {
+          console.error('Error inserting initial global stats:', err);
+        } else {
+          console.log("Initialized global_stats record");
+        }
+      });
+
+      // Nueva tabla para leaderboard de jugadores
+      db.run(`CREATE TABLE IF NOT EXISTS player_leaderboard (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        username TEXT NOT NULL,
+        total_winnings REAL DEFAULT 0,
+        total_games_played INTEGER DEFAULT 0,
+        total_games_won INTEGER DEFAULT 0,
+        total_games_lost INTEGER DEFAULT 0,
+        total_games_tied INTEGER DEFAULT 0,
+        biggest_win REAL DEFAULT 0,
+        total_bets_placed REAL DEFAULT 0,
+        win_rate REAL DEFAULT 0,
+        last_updated DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users (id)
+      )`, (err) => {
+        if (err) {
+          console.error(err);
+        }
+        else {
+          console.log("Created player_leaderboard table");
+        }
+      });
+
+      // Crear índice para mejorar el rendimiento de consultas del leaderboard
+      db.run(`CREATE INDEX IF NOT EXISTS idx_leaderboard_winnings ON player_leaderboard (total_winnings DESC)`, (err) => {
+        if (err) {
+          console.error('Error creating leaderboard index:', err);
+        } else {
+          console.log("Created leaderboard index");
+        }
+      });
+
     });
   }
 });

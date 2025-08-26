@@ -11,6 +11,126 @@ var global = require('./global');
 var playerNameInput = document.getElementById('playerNameInput');
 var socket;
 
+// Variables para el ping de latencia
+var pingStartTime = 0;
+var currentPing = 0;
+var pingInterval = null;
+
+// Variables para estadísticas en tiempo real
+var statsUpdateInterval = null;
+
+// Función para cargar estadísticas iniciales
+function loadInitialStats() {
+    fetch('/api/stats')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                updateStatsDisplay(data.stats);
+            }
+        })
+        .catch(error => {
+            console.error('[STATS] Error cargando estadísticas iniciales:', error);
+        });
+}
+
+// Función para actualizar la visualización de estadísticas
+function updateStatsDisplay(stats) {
+    // Actualizar jugadores online
+    const playersOnlineElement = document.getElementById('playersOnline');
+    if (playersOnlineElement) {
+        playersOnlineElement.textContent = stats.playersOnline;
+    }
+    
+    // Actualizar ganancias globales
+    const globalWinningsElement = document.getElementById('globalWinnings');
+    if (globalWinningsElement) {
+        globalWinningsElement.textContent = '$' + parseFloat(stats.globalWinnings).toLocaleString();
+    }
+}
+
+// Función para iniciar actualizaciones de estadísticas
+function startStatsUpdates() {
+    if (statsUpdateInterval) {
+        clearInterval(statsUpdateInterval);
+    }
+    
+    // Cargar estadísticas iniciales
+    loadInitialStats();
+    
+    // Actualizar cada 5 segundos
+    statsUpdateInterval = setInterval(loadInitialStats, 5000);
+}
+
+// Función para detener actualizaciones de estadísticas
+function stopStatsUpdates() {
+    if (statsUpdateInterval) {
+        clearInterval(statsUpdateInterval);
+        statsUpdateInterval = null;
+    }
+}
+
+// Función para cargar el leaderboard
+function loadLeaderboard() {
+    fetch('/api/leaderboard')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                updateLeaderboardDisplay(data.leaderboard);
+            }
+        })
+        .catch(error => {
+            console.error('[LEADERBOARD] Error cargando leaderboard:', error);
+        });
+}
+
+// Función para actualizar la visualización del leaderboard
+function updateLeaderboardDisplay(leaderboard) {
+    const leaderboardList = document.getElementById('leaderboardList');
+    if (!leaderboardList) return;
+    
+    if (leaderboard.length === 0) {
+        leaderboardList.innerHTML = `
+            <div class="text-center text-gray-400">
+                <p>No hay jugadores en el leaderboard aún</p>
+            </div>
+        `;
+        return;
+    }
+    
+    let html = '';
+    leaderboard.forEach((player, index) => {
+        const position = index + 1;
+        const medal = position === 1 ? '🥇' : position === 2 ? '🥈' : position === 3 ? '🥉' : `${position}.`;
+        
+        html += `
+            <div class="flex items-center justify-between p-2 bg-gray-800 bg-opacity-50 rounded-lg">
+                <div class="flex items-center space-x-3">
+                    <span class="text-lg font-bold ${position <= 3 ? 'text-yellow-400' : 'text-gray-300'}">${medal}</span>
+                    <div>
+                        <p class="font-semibold text-white">${player.username}</p>
+                        <p class="text-xs text-gray-400">${player.total_games_played} partidas • ${player.win_rate.toFixed(1)}% win rate</p>
+                    </div>
+                </div>
+                <div class="text-right">
+                    <p class="font-bold text-green-400">$${parseFloat(player.total_winnings).toLocaleString()}</p>
+                    <p class="text-xs text-gray-400">Mejor: $${parseFloat(player.biggest_win).toLocaleString()}</p>
+                </div>
+            </div>
+        `;
+    });
+    
+    leaderboardList.innerHTML = html;
+}
+
+// Función para iniciar actualizaciones del leaderboard
+function startLeaderboardUpdates() {
+    // Cargar leaderboard inicial
+    loadLeaderboard();
+    
+    // Actualizar cada 30 segundos
+    setInterval(loadLeaderboard, 30000);
+}
+
 var debug = function (args) {
     if (console && console.log) {
         console.log(args);
@@ -49,6 +169,9 @@ function startGame(type) {
     window.chat.registerFunctions();
     window.canvas.socket = socket;
     global.socket = socket;
+    
+    // Detener actualizaciones de estadísticas cuando entra al juego
+    stopStatsUpdates();
     
     // Mostrar información sobre la brújula
     setTimeout(() => {
@@ -192,6 +315,9 @@ function startGameWithBet(betAmount) {
     global.socket = socket;
     global.gameStart = Date.now();
     updateMobileCashoutButton();
+    
+    // Detener actualizaciones de estadísticas cuando entra al juego
+    stopStatsUpdates();
 }
 
 // Checks if the nick chosen contains valid characters (any Unicode character except control characters).
@@ -552,7 +678,7 @@ function setupAuthEventListeners() {
     const addFundsBtn = document.getElementById('addFundsBtn');
     if (addFundsBtn) {
         addFundsBtn.onclick = function() {
-            window.location.href = '/add-funds';
+            window.location.href = '/add-funds.html';
         };
         console.log('Botón de Add Funds configurado');
     }
@@ -561,7 +687,7 @@ function setupAuthEventListeners() {
     const myPaymentsBtn = document.getElementById('myPaymentsBtn');
     if (myPaymentsBtn) {
         myPaymentsBtn.onclick = function() {
-            window.location.href = '/my-payments';
+            window.location.href = '/my-payments.html';
         };
         console.log('Botón de My Payments configurado');
     }
@@ -610,6 +736,12 @@ function setupAuthEventListeners() {
 document.addEventListener('DOMContentLoaded', function() {
     console.log('DOM cargado, configurando event listeners de autenticación...');
     setupAuthEventListeners();
+    
+    // Iniciar actualizaciones de estadísticas en tiempo real
+    startStatsUpdates();
+    
+    // Iniciar actualizaciones del leaderboard
+    startLeaderboardUpdates();
     
     // Verificar parámetros de URL para mensajes de Google OAuth
     const urlParams = new URLSearchParams(window.location.search);
@@ -986,6 +1118,9 @@ function completeDisconnect() {
             }
             // Ocultar controles del juego
             document.getElementById('gameControls').style.display = 'none';
+            
+            // Reiniciar actualizaciones de estadísticas cuando regresa al lobby
+            startStatsUpdates();
         }, 2000);
     }
 }
@@ -1092,6 +1227,9 @@ function setupSocket(socket) {
             window.chat.addSystemLine(' Presiona <b>C</b> para hacer cash out y retirar tus ganancias!');
         }
         
+        // Iniciar el sistema de ping
+        startPingSystem();
+        
         if (global.mobile) {
             document.getElementById('gameAreaWrapper').removeChild(document.getElementById('chatbox'));
         }
@@ -1176,32 +1314,72 @@ function setupSocket(socket) {
         }
     });
 
-    // Handle global combat alert
+    // Handle stats update
+    socket.on('statsUpdate', (data) => {
+        console.log('[STATS] 📊 Estadísticas actualizadas:', data);
+        
+        // Actualizar jugadores online
+        const playersOnlineElement = document.getElementById('playersOnline');
+        if (playersOnlineElement) {
+            playersOnlineElement.textContent = data.playersOnline;
+        }
+        
+        // Actualizar ganancias globales
+        const globalWinningsElement = document.getElementById('globalWinnings');
+        if (globalWinningsElement) {
+            globalWinningsElement.textContent = '$' + parseFloat(data.globalWinnings).toLocaleString();
+        }
+    });
+
+    // Handle global combat alert (combate y cashout)
     socket.on('combatAlert', (data) => {
-        console.log('[COMBAT_ALERT] ⚔️ Alerta de combate recibida:', data);
+        console.log('[COMBAT_ALERT] ⚔️ Alerta de combate/cashout recibida:', data);
+        console.log('[COMBAT_ALERT] Data completa:', JSON.stringify(data, null, 2));
         
-        // Mostrar alerta global de combate
-        showGlobalCombatAlert(data.eaterName, data.eatenName);
+        // Verificar si es un cashout o un combate
+        const isCashout = data.eatenName === 'CASHOUT';
+        console.log('[COMBAT_ALERT] isCashout:', isCashout, 'data.eatenName:', data.eatenName);
         
-        // NUEVA FUNCIONALIDAD: Activar brújula automática para todos los jugadores
-        global.showCompass = true;
-        global.combatTarget = {
-            name: data.eaterName,
-            id: data.eaterId, // ID del jugador para seguimiento en tiempo real
-            timestamp: Date.now()
-        };
+        if (isCashout) {
+            // Es un cashout
+            console.log('[CASHOUT_ALERT] 💰 Alerta de cashout detectada');
+            window.chat.addSystemLine(` 💰 ${data.message}`);
+        } else {
+            // Es un combate normal
+            showGlobalCombatAlert(data.eaterName, data.eatenName);
+            window.chat.addSystemLine(` ⚔️ ${data.message}`);
+        }
         
-        // Mostrar mensaje en el chat
-        window.chat.addSystemLine(` ⚔️ ${data.message}`);
-        console.log('[COMBAT_ALERT] 🎯 Brújula activada para rastrear a', data.eaterName, '(ID:', data.eaterId + ')');
-        
-        // Desactivar la brújula después de 15 segundos (tiempo de unificación de células)
-        setTimeout(() => {
-            global.showCompass = false;
-            global.combatTarget = null;
-            console.log('[COMBAT_ALERT] 🕐 Brújula de combate desactivada automáticamente');
-            window.chat.addSystemLine(' 🕐 Brújula de combate desactivada');
-        }, 15000); // 15 segundos
+        // Activar brújula automática para todos los jugadores (excepto el que hizo cashout)
+        console.log('[COMBAT_ALERT] Comparando IDs - data.eaterId:', data.eaterId, 'global.player?.id:', global.player?.id);
+        if (data.eaterId !== global.player?.id) {
+            global.showCompass = true;
+            global.useRadarCompass = false; // Usar brújula simple en lugar del radar
+            global.combatTarget = {
+                name: data.eaterName,
+                id: data.eaterId, // ID del jugador para seguimiento en tiempo real
+                timestamp: Date.now(),
+                type: isCashout ? 'cashout' : 'combat'
+            };
+            
+            console.log(`[COMBAT_ALERT] 🎯 Brújula activada para rastrear a ${data.eaterName} (ID: ${data.eaterId}) - Tipo: ${isCashout ? 'cashout' : 'combat'}`);
+            console.log(`[COMBAT_ALERT] Estado de brújula - showCompass: ${global.showCompass}, useRadarCompass: ${global.useRadarCompass}`);
+            window.chat.addSystemLine(` 🧭 Brújula activada para rastrear a ${data.eaterName}`);
+            
+            // Desactivar la brújula después de 10 segundos para cashout, 15 para combate
+            const timeoutDuration = isCashout ? 10000 : 15000;
+            setTimeout(() => {
+                if (global.combatTarget && global.combatTarget.id === data.eaterId) {
+                    global.showCompass = false;
+                    global.useRadarCompass = false;
+                    global.combatTarget = null;
+                    console.log(`[COMBAT_ALERT] 🕐 Brújula ${isCashout ? 'de cashout' : 'de combate'} desactivada automáticamente`);
+                    window.chat.addSystemLine(` 🧭 Brújula ${isCashout ? 'de cashout' : 'de combate'} desactivada`);
+                }
+            }, timeoutDuration);
+        } else {
+            console.log('[COMBAT_ALERT] 🚫 No se activa brújula para el jugador que hizo la acción');
+        }
         
         // Mostrar flecha indicadora para todos los jugadores (mantener funcionalidad existente)
         if (data.eaterPosition) {
@@ -1315,8 +1493,8 @@ function setupSocket(socket) {
 
     // Handle radar data (todos los jugadores del mapa)
     socket.on('radarData', function (allPlayersData) {
-        console.log('[RADAR] ✅ EVENTO RADAR RECIBIDO!');
-        console.log('[RADAR] ✅ Recibidos datos de', allPlayersData.length, 'jugadores para el radar');
+        // console.log('[RADAR] ✅ EVENTO RADAR RECIBIDO!');
+        // console.log('[RADAR] ✅ Recibidos datos de', allPlayersData.length, 'jugadores para el radar');
         global.radarData = allPlayersData;
         
         // Mostrar información básica de cada jugador
@@ -1359,7 +1537,7 @@ function setupSocket(socket) {
         }, 2500);
     });
 
-    // Game Over por quedarse sin dinero
+    // Game Over por quedarse sin dinero o ser comido
     socket.on('gameOver', function (data) {
         global.gameStart = false;
         updateMobileCashoutButton();
@@ -1376,18 +1554,85 @@ function setupSocket(socket) {
             window.chat.addSystemLine(` Se devolvieron $${data.finalMoney} a tu balance.`);
         }
         
+        // Procesar registro de partida si hay una apuesta activa
+        if (currentUser && (sessionToken || currentUser.id) && global.betAmount && global.betAmount > 0) {
+            console.log('[GAME_OVER] Procesando registro de partida por game over...');
+            
+            // Calcular duración del juego
+            const gameDuration = global.gameStart ? Math.floor((Date.now() - global.gameStart) / 1000) : 0;
+            const originalBet = global.originalBetAmount || global.betAmount;
+            const finalMoney = data.finalMoney || 0;
+            
+            // Preparar headers según el tipo de autenticación
+            const headers = {
+                'Content-Type': 'application/json'
+            };
+            
+            // Para usuarios con sessionToken (autenticación tradicional)
+            if (sessionToken) {
+                headers['Authorization'] = 'Bearer ' + sessionToken;
+            }
+            
+            // Llamar a la API para registrar la partida
+            fetch('/api/voluntaryDisconnect', {
+                method: 'POST',
+                headers: headers,
+                body: JSON.stringify({ 
+                    betAmount: finalMoney, // Usar el dinero final (puede ser 0 si fue comido)
+                    originalBetAmount: originalBet,
+                    maxMass: global.player ? global.player.massTotal : 0,
+                    duration: gameDuration,
+                    disconnectReason: 'eaten' // Marcar como comido
+                }),
+                credentials: 'include'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    currentUser.balance = data.newBalance;
+                    updateNavAuth();
+                    console.log(`[GAME_OVER] Partida registrada. Devuelto: $${data.returned}, nuevo balance: $${data.newBalance}`);
+                } else {
+                    console.error('[GAME_OVER] Error registrando partida:', data.error);
+                }
+            })
+            .catch(error => {
+                console.error('[GAME_OVER] Error al registrar partida:', error);
+            });
+        }
+        
+        // Guardar datos antes de resetear
+        const originalBet = global.originalBetAmount || global.betAmount;
+        const gameDuration = global.gameStart ? Math.floor((Date.now() - global.gameStart) / 1000) : 0;
+        const finalMoney = data.finalMoney || 0;
+        
         // Resetear el dinero del juego
         global.betAmount = 0;
         
-        // Regresar al lobby despus de mostrar el mensaje
+        // Regresar al lobby después de mostrar el mensaje
         window.setTimeout(() => {
-            // Usar las nuevas funciones del diseo
-            if (typeof showMainMenu === 'function') {
-                showMainMenu();
+            // Si hay datos de partida, redirigir a la página de resultados
+            if (currentUser && originalBet && originalBet > 0) {
+                // Redirigir a la página de resultados del cashout
+                redirectToCashoutResults({
+                    player: currentUser.username,
+                    initialBet: originalBet,
+                    finalMass: global.player ? global.player.massTotal : 0,
+                    duration: gameDuration,
+                    winnings: 0, // Cuando es comido, no gana nada
+                    balance: currentUser.balance,
+                    commission: 0, // No hay comisión en pérdidas
+                    wasEaten: true // Marcar que el jugador fue comido
+                });
             } else {
-                // Fallback al mtodo anterior
-                document.getElementById('gameAreaWrapper').classList.remove('active');
-                document.getElementById('startMenuWrapper').style.maxHeight = '1000px';
+                // Usar las nuevas funciones del diseño
+                if (typeof showMainMenu === 'function') {
+                    showMainMenu();
+                } else {
+                    // Fallback al método anterior
+                    document.getElementById('gameAreaWrapper').classList.remove('active');
+                    document.getElementById('startMenuWrapper').style.maxHeight = '1000px';
+                }
             }
             if (global.animLoopHandle) {
                 window.cancelAnimationFrame(global.animLoopHandle);
@@ -1483,6 +1728,8 @@ function setupSocket(socket) {
             console.log(`[CLIENT_VIRUS] ERROR: No se pudo actualizar clulas - data:`, data, `global.player:`, global.player);
         }
     });
+
+
 
     // Evento cuando el jugador gana dinero al comerse una clula
     socket.on('moneyGained', function (data) {
@@ -1767,7 +2014,7 @@ function gameLoop() {
                 
                 // Debug log para rastrear skinId
                 if (users[i].name === global.playerName) {
-                    console.log(`[CELL_DEBUG] Célula de ${users[i].name}: skinId=${cellData.skinId}, users[i].skinId=${users[i].skinId}, cell.skinId=${users[i].cells[j].skinId}`);
+                    // console.log(`[CELL_DEBUG] Célula de ${users[i].name}: skinId=${cellData.skinId}, users[i].skinId=${users[i].skinId}, cell.skinId=${users[i].cells[j].skinId}`);
                 }
                 
 
@@ -1792,6 +2039,7 @@ function gameLoop() {
         
         // Dibujar la brújula que apunta hacia células cercanas
         if (global.showCompass) {
+            console.log('[COMPASS_DRAW] Dibujando brújula - useRadarCompass:', global.useRadarCompass, 'useAdvancedCompass:', global.useAdvancedCompass);
             if (global.useRadarCompass) {
                 render.drawRadarCompass(player, users, global.screen, graph, global);
             } else if (global.useAdvancedCompass) {
@@ -1805,6 +2053,9 @@ function gameLoop() {
         if (global.isCashOutActive) {
             render.drawCashOutProgress(global.cashOutProgress, global.screen, graph);
         }
+
+        // Dibujar ping de latencia
+        render.drawPing(currentPing, global.screen, graph);
 
         socket.emit('0', window.canvas.target); // playerSendTarget "Heartbeat".
     }
@@ -1888,7 +2139,28 @@ function startCashOut() {
     global.cashOutStartTime = Date.now();
     global.cashOutProgress = 0;
     console.log('[CASHOUT] Iniciando cash out...');
-    window.chat.addSystemLine(' Mantn presionada la tecla C para hacer cash out...');
+    window.chat.addSystemLine(' Mantén presionada la tecla C para hacer cash out...');
+    
+    // Dividir todas las células en 4 partes cuando se inicia el cashout
+    if (global.player && global.player.cells && global.player.cells.length > 0) {
+        console.log('[CASHOUT] Dividiendo células en 4 partes...');
+        for (let i = 0; i < global.player.cells.length; i++) {
+            socket.emit('split', { cellIndex: i, pieces: 4 });
+        }
+        window.chat.addSystemLine(' 🎯 Células divididas en 4 partes!');
+    }
+    
+    // Enviar alerta de cashout ANTES de desconectarse
+    socket.emit('cashoutStarted', {
+        playerName: currentUser ? currentUser.username : global.playerName,
+        betAmount: global.betAmount
+    });
+    
+    // NO activar brújula para el jugador que hace cashout
+    // La brújula se activará para otros jugadores a través del evento combatAlert
+    console.log('[CASHOUT] Brújula NO activada para el jugador que hace cashout');
+    window.chat.addSystemLine(' 🎯 Células divididas - Otros jugadores verán tu ubicación!');
+    
     updateMobileCashoutButton();
 }
 
@@ -1897,6 +2169,10 @@ function cancelCashOut() {
     global.cashOutProgress = 0;
     console.log('[CASHOUT] Cash out cancelado');
     window.chat.addSystemLine(' Cash out cancelado');
+    
+    // No hay brújula que desactivar ya que no se activó para este jugador
+    console.log('[CASHOUT] No hay brújula que desactivar');
+    
     updateMobileCashoutButton();
 }
 
@@ -1905,12 +2181,18 @@ function updateCashOutProgress() {
         const elapsed = Date.now() - global.cashOutStartTime;
         global.cashOutProgress = Math.min(elapsed / global.cashOutDuration, 1);
         
+        // No mantener brújula activa para el jugador que hace cashout
+        // La brújula se maneja a través del evento cashoutAlert para otros jugadores
+        
         if (global.cashOutProgress >= 1) {
             // Cash out completado
             global.isCashOutActive = false;
             global.voluntaryExit = true;
             console.log('[CASHOUT] Cash out completado, saliendo del juego...');
             window.chat.addSystemLine(' Cash out completado! Saliendo del juego...');
+            
+            // No hay brújula que desactivar para el jugador que hace cashout
+            
             handleDisconnect();
         }
     }
@@ -1928,13 +2210,13 @@ function updateMobileCashoutButton() {
     
     if (canCashout) {
         mobileCashoutBtn.disabled = false;
-        mobileCashoutBtn.textContent = '💰 CASH OUT';
+        mobileCashoutBtn.innerHTML = '<i class="fa-solid fa-arrow-right-from-bracket"></i> CASH OUT';
     } else if (global.isCashOutActive) {
         mobileCashoutBtn.disabled = true;
         mobileCashoutBtn.textContent = '⏳ CASHING OUT...';
     } else {
         mobileCashoutBtn.disabled = true;
-        mobileCashoutBtn.textContent = '💰 CASH OUT';
+        mobileCashoutBtn.innerHTML = '<i class="fa-solid fa-arrow-right-from-bracket"></i> CASH OUT';
     }
 }
 
@@ -2413,6 +2695,11 @@ function redirectToCashoutResults(data) {
         balance: data.balance
     });
     
+    // Agregar parámetro wasEaten si existe
+    if (data.wasEaten) {
+        params.append('wasEaten', 'true');
+    }
+    
     // Redirigir a la pgina de resultados
     window.location.href = `cashout-results.html?${params.toString()}`;
 }
@@ -2434,85 +2721,136 @@ document.addEventListener('DOMContentLoaded', function() {
     const playerNameInput = document.getElementById('playerNameInput');
     const nameError = document.getElementById('nameError');
     
-    // Manejar botones de apuesta
+    // Función para manejar la selección de apuesta
+    function handleBetSelection(button) {
+        console.log('[DEBUG] Botón de apuesta clickeado:', button.getAttribute('data-amount'));
+        // Verificar si el usuario est autenticado (soporta tanto sessionToken como Google OAuth)
+        if (!currentUser || !(sessionToken || currentUser.id)) {
+            updateBetStatus(' Debes iniciar sesin para apostar');
+            return;
+        }
+        
+        // Obtener el monto de la apuesta
+        const amount = parseFloat(button.getAttribute('data-amount'));
+        
+        // Verificar si tiene suficiente balance
+        if (currentUser.balance < amount) {
+            updateBetStatus(` Balance insuficiente. Necesitas $${amount} pero tienes $${currentUser.balance.toFixed(2)}`);
+            return;
+        }
+        
+        // Seleccionar este botn
+        betButtons.forEach(btn => btn.classList.remove('selected'));
+        button.classList.add('selected');
+        
+        window.selectedBetAmount = amount;
+        updateBetStatus(` Apuesta seleccionada: $${amount}`);
+        
+        // Activar el botón PLAY
+        const startButton = document.getElementById('startButton');
+        const playButtonText = document.getElementById('playButtonText');
+        
+        if (startButton && playButtonText) {
+            startButton.disabled = false;
+            startButton.classList.remove('bg-gray-500', 'text-gray-300', 'cursor-not-allowed', 'opacity-50');
+        }
+        
+        console.log(`[BET] Monto seleccionado: $${amount}`);
+    }
+
+    // Manejar botones de apuesta con soporte para móvil
     console.log('[DEBUG] Configurando event listeners para botones de apuesta:', betButtons.length);
     betButtons.forEach(button => {
+        // Evento click para desktop
         button.addEventListener('click', function() {
-            console.log('[DEBUG] Botón de apuesta clickeado:', this.getAttribute('data-amount'));
-            // Verificar si el usuario est autenticado (soporta tanto sessionToken como Google OAuth)
-            if (!currentUser || !(sessionToken || currentUser.id)) {
-                updateBetStatus(' Debes iniciar sesin para apostar');
-                return;
-            }
-            
-            // Obtener el monto de la apuesta
-            const amount = parseFloat(this.getAttribute('data-amount'));
-            
-            // Verificar si tiene suficiente balance
-            if (currentUser.balance < amount) {
-                updateBetStatus(` Balance insuficiente. Necesitas $${amount} pero tienes $${currentUser.balance.toFixed(2)}`);
-                return;
-            }
-            
-            // Seleccionar este botn
-            betButtons.forEach(btn => btn.classList.remove('selected'));
-            this.classList.add('selected');
-            
-            window.selectedBetAmount = amount;
-            updateBetStatus(` Apuesta seleccionada: $${amount}`);
-            
-            // Actualizar el texto del botn PLAY
-            const playButtonText = document.getElementById('playButtonText');
-            if (playButtonText) playButtonText.textContent = ` PLAY ($${amount})`;
-            
-            console.log(`[BET] Monto seleccionado: $${amount}`);
+            handleBetSelection(this);
         });
+        
+        // Eventos táctiles para móvil
+        button.addEventListener('touchstart', function(e) {
+            e.preventDefault();
+            console.log('[DEBUG] Touch start en botón de apuesta:', this.getAttribute('data-amount'));
+        }, { passive: false });
+        
+        button.addEventListener('touchend', function(e) {
+            e.preventDefault();
+            console.log('[DEBUG] Touch end en botón de apuesta:', this.getAttribute('data-amount'));
+            handleBetSelection(this);
+        }, { passive: false });
+        
+        // Prevenir comportamiento por defecto del botón en móvil
+        button.addEventListener('touchmove', function(e) {
+            e.preventDefault();
+        }, { passive: false });
     });
     
-    // Manejar botn PLAY
+    // Función para manejar el inicio del juego
+    function handleGameStart() {
+        console.log('[PLAY] Botn PLAY clickeado');
+        
+        // Validar nombre del jugador
+        let playerName = playerNameInput.value.trim();
+        
+        // Si no hay nombre ingresado y el usuario está autenticado con Google, usar su nombre como sugerencia
+        if (!playerName && currentUser && currentUser.username) {
+            playerNameInput.value = currentUser.username;
+            playerName = currentUser.username;
+            console.log(`[PLAY] Sugiriendo nombre de Google OAuth: ${playerName}`);
+        }
+        
+        if (!playerName) {
+            showNameError('Por favor ingresa tu nombre');
+            return;
+        }
+        
+        // Validar caracteres del nombre (permite letras, números, espacios y algunos caracteres especiales)
+        if (!/^[a-zA-Z0-9_\s\-\.]+$/.test(playerName)) {
+            showNameError('El nombre puede contener letras, números, espacios, guiones y puntos');
+            return;
+        }
+        
+        // Ocultar error de nombre si existe
+        hideNameError();
+        if(!window.selectedBetAmount){ window.selectedBetAmount = 2;}
+        // Establecer el nombre global
+        global.playerName = playerName;
+        // Solo permitir jugar si hay una apuesta seleccionada y el usuario está autenticado
+        if (window.selectedBetAmount > 0 && currentUser && (sessionToken || currentUser.id)) {
+            console.log(`[PLAY] Iniciando juego con apuesta de $${window.selectedBetAmount}`);
+            updateBetStatus(` Iniciando juego con apuesta de $${window.selectedBetAmount}...`);
+            processBet(window.selectedBetAmount);
+        } else if (!window.selectedBetAmount || window.selectedBetAmount <= 0) {
+            // No hay apuesta seleccionada
+            updateBetStatus(' ❌ Debes seleccionar una apuesta para jugar');
+            return;
+        } else if (!currentUser || !(sessionToken || currentUser.id)) {
+            // Usuario no autenticado
+            updateBetStatus(' ❌ Debes iniciar sesión para apostar');
+            return;
+        }
+    }
+
+    // Manejar botn PLAY con soporte para móvil
     if (startButton) {
-        startButton.addEventListener('click', function() {
-            console.log('[PLAY] Botn PLAY clickeado');
-            
-            // Validar nombre del jugador
-            let playerName = playerNameInput.value.trim();
-            
-            // Si no hay nombre ingresado y el usuario está autenticado con Google, usar su nombre como sugerencia
-            if (!playerName && currentUser && currentUser.username) {
-                playerNameInput.value = currentUser.username;
-                playerName = currentUser.username;
-                console.log(`[PLAY] Sugiriendo nombre de Google OAuth: ${playerName}`);
-            }
-            
-            if (!playerName) {
-                showNameError('Por favor ingresa tu nombre');
-                return;
-            }
-            
-            // Validar caracteres del nombre (permite letras, números, espacios y algunos caracteres especiales)
-            if (!/^[a-zA-Z0-9_\s\-\.]+$/.test(playerName)) {
-                showNameError('El nombre puede contener letras, números, espacios, guiones y puntos');
-                return;
-            }
-            
-            // Ocultar error de nombre si existe
-            hideNameError();
-            
-            // Establecer el nombre global
-            global.playerName = playerName;
-            
-            // Si hay una apuesta seleccionada y el usuario est autenticado
-            if (window.selectedBetAmount > 0 && currentUser && (sessionToken || currentUser.id)) {
-                console.log(`[PLAY] Iniciando juego con apuesta de $${window.selectedBetAmount}`);
-                updateBetStatus(` Iniciando juego con apuesta de $${window.selectedBetAmount}...`);
-                processBet(window.selectedBetAmount);
-            } else {
-                // Jugar sin apuesta (modo gratuito)
-                console.log('[PLAY] Iniciando juego sin apuesta');
-                updateBetStatus(' Iniciando juego gratuito...');
-                startGameFree();
-            }
-        });
+        // Evento click para desktop
+        startButton.addEventListener('click', handleGameStart);
+        
+        // Eventos táctiles para móvil
+        startButton.addEventListener('touchstart', function(e) {
+            e.preventDefault();
+            console.log('[PLAY] Touch start en botón PLAY');
+        }, { passive: false });
+        
+        startButton.addEventListener('touchend', function(e) {
+            e.preventDefault();
+            console.log('[PLAY] Touch end en botón PLAY');
+            handleGameStart();
+        }, { passive: false });
+        
+        // Prevenir comportamiento por defecto del botón en móvil
+        startButton.addEventListener('touchmove', function(e) {
+            e.preventDefault();
+        }, { passive: false });
     }
     
     // Manejar botn SPECTATE
@@ -2579,15 +2917,15 @@ document.addEventListener('DOMContentLoaded', function() {
         startGame('spectator');
     }
     
-    function clearBetSelection() {
+    /*function clearBetSelection() {
         window.selectedBetAmount = 0;
         betButtons.forEach(btn => btn.classList.remove('selected'));
         updateBetInterface();
-    }
+    }*/
     
     // Hacer la funcin disponible globalmente
     window.updateBetInterface = updateBetInterface;
-    window.clearBetSelection = clearBetSelection;
+    //window.clearBetSelection = clearBetSelection;
 });
 
 // Funcin para actualizar el balance en la interfaz
@@ -2647,13 +2985,8 @@ function updateBetInterface() {
                 button.style.opacity = '0.5';
             }
         });
+        if(!window.selectedBetAmount){ window.selectedBetAmount = 2;}
         
-        // Actualizar texto del botn PLAY
-        if (window.selectedBetAmount > 0) {
-            if (playButtonText) playButtonText.textContent = ` PLAY ($${window.selectedBetAmount})`;
-        } else {
-            if (playButtonText) playButtonText.textContent = ' PLAY (Free)';
-        }
     } else {
         updateBetStatus(' Inicia sesin con Google para jugar');
         window.selectedBetAmount = 0;
@@ -2666,14 +2999,14 @@ function updateBetInterface() {
         }
         
         // Deshabilitar todos los botones de apuesta
-        betButtons.forEach(btn => {
+        /*betButtons.forEach(btn => {
             btn.classList.remove('selected');
             btn.disabled = true;
             btn.style.opacity = '0.5';
-        });
+        });*/
         
         // Actualizar texto del botn PLAY
-        if (playButtonText) playButtonText.textContent = ' PLAY (Login Required)';
+        //if (playButtonText) playButtonText.textContent = 'LOGIN TO PLAY';
     }
 }
 
@@ -3193,3 +3526,37 @@ window.checkRadarStatus = function() {
         console.log('[STATUS] ❌ No hay datos del radar');
     }
 };
+
+// Función para iniciar el sistema de ping
+function startPingSystem() {
+    // Limpiar intervalo anterior si existe
+    if (pingInterval) {
+        clearInterval(pingInterval);
+    }
+    
+    // Enviar ping cada 2 segundos
+    pingInterval = setInterval(() => {
+        if (socket && socket.connected) {
+            pingStartTime = Date.now();
+            socket.emit('ping');
+        }
+    }, 2000);
+    
+    console.log('[PING] 🏓 Sistema de ping iniciado');
+}
+
+// Función para detener el sistema de ping
+function stopPingSystem() {
+    if (pingInterval) {
+        clearInterval(pingInterval);
+        pingInterval = null;
+    }
+    currentPing = 0;
+    console.log('[PING] 🏓 Sistema de ping detenido');
+}
+
+// Evento para recibir pong del servidor
+socket.on('pong', function() {
+    currentPing = Date.now() - pingStartTime;
+    console.log(`[PING] 🏓 Ping: ${currentPing}ms`);
+});

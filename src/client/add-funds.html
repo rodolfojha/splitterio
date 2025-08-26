@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Add Funds - Splitta.io</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <style>
+        /* Estilos adicionales para mejorar la experiencia móvil */        @import url('https://fonts.googleapis.com/css?family=Exo:100');
+        html, body {
+          overflow: auto;
+        }
+        
+        .button {
+          color: #ff9900;
+          font-size: 17px;
+          background-color: transparent; /* naranja brillante base */
+          border: 4px solid #ff9900;
+          border-radius: 115px;
+          cursor: pointer;
+          padding: 10px;
+          box-shadow: 0px 6px 0px #cc7a00;
+          transition: all 0.1s ease-in-out;
+          font-weight: bold;
+        }
+
+        button.inactive {
+          color: #FFF;
+          font-size: 17px;
+          background-color: transparent;
+          border: 4px solid #858585;
+          border-radius: 115px;
+          padding: 10px 50px;
+          box-shadow: 0px 6px 0px #5E5E5E;
+          font-weight: bold;
+        }
+
+        button.selected {
+          color: #000;
+          background-color: #ffd24d; /* amarillo cálido */
+          border-color: #ffb300;
+        }
+
+        .button:hover {
+          box-shadow: 0px 4px 0px #cc7a00;
+          position: relative;
+          background: rgba(255, 168, 0, 0.15);
+          top: 1px;
+        }
+
+        .button:active {
+          box-shadow: 0px 2px 0px #cc7a00;
+          position: relative;
+          top: 2px;
+        }
+
+        button:hover.selected {
+          box-shadow: 0px 4px 0px #cc7a00;
+          background-color: #ffcc33;
+          top: 1px;
+        }
+
+        button:active.selected {
+          box-shadow: 0px 2px 0px #cc7a00;
+          top: 2px;
+        }
+
+        button:hover.inactive {
+          box-shadow: 0px 4px 0px #5E5E5E;
+          background: rgba(255, 255, 255, 0.05);
+          top: 1px;
+        }
+
+        button:active.inactive {
+          box-shadow: 0px 2px 0px #5E5E5E;
+          top: 2px;
+        }
+        @media (max-width: 768px) {
+            .bg-gray-800 {
+                padding: 1rem !important;
+            }
+            
+            .p-8 {
+                padding: 1rem !important;
+            }
+            
+            .text-3xl {
+                font-size: 1.5rem;
+            }
+            
+            .max-w-4xl {
+                max-width: 100%;
+            }
+            
+            .flex-col.md\\:flex-row {
+                flex-direction: column;
+            }
+            
+            .gap-6 {
+                gap: 1rem;
+            }
+        }
+        
+        /* Mejoras para interacción táctil */
+        @media (hover: none) and (pointer: coarse) {
+            button, select, input {
+                min-height: 44px;
+            }
+            
+            button:active {
+                transform: scale(0.95);
+                transition: transform 0.1s ease;
+            }
+        }
+          /* Dropdown personalizado */
+        .dropdown {
+          position: relative;
+          width: 100%;
+        }
+        .dropdown-content {
+          display: none;
+          position: absolute;
+          width: 100%;
+          max-height: 250px;
+          overflow-y: auto;
+          background-color: #1f2937; /* bg-gray-800 */
+          border: 1px solid #4b5563; /* border-gray-600 */
+          border-radius: 0.75rem; /* rounded-xl */
+          z-index: 50;
+          box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+        }
+        .dropdown-item {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 0.75rem 1rem;
+          cursor: pointer;
+          transition: background 0.2s;
+        }
+        .dropdown-item:hover {
+          background-color: #2563eb; /* azul hover */
+        }
+        .crypto-icon {
+          width: 20px;
+          height: 20px;
+          margin-right: 0.5rem;
+        }
+        .roundedorange{
+          color: #ff9900;
+          font-size: 17px;
+          background-color: transparent; /* naranja brillante base */
+          border: 4px solid #ff9900;
+          padding: 10px;
+          box-shadow: 0px 6px 0px #cc7a00;
+          transition: all 0.1s ease-in-out;
+          font-weight: bold;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen flex items-center justify-center">
+    <div class="bg-gray-800 rounded-2xl shadow-2xl p-8 max-w-4xl min-w-4xl mx-4 flex flex-col md:flex-row gap-6" style="min-width: 28rem;">
+        
+        <!-- Sección principal (formulario) -->
+        <div class="flex-1">
+            <h1 class="text-3xl font-bold text-center mb-8">💰 Add Funds</h1>
+
+            <form id="paymentForm" class="space-y-6">
+                <div>
+                    <label class="block text-sm font-medium mb-2 text-gray-300" id="amountLabel">Amount (USD)</label>
+                    <input id="amountInput" type="number" id="amount" min="2" step="0.01" value="2"
+                        class="w-full p-4 bg-gray-700 border border-gray-600 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-100 placeholder-gray-400 transition">
+                </div>
+
+                  <div class="rounded-xl mb-5 roundedorange"> <!--class="bg-blue-600 text-white rounded-xl p-3 mb-3">-->
+                    <p class="font-bold mb-1">💡 Low Fees:</p>
+                    <p>Choose <span class="uppercase font-semibold">USDT / USDC MATIC</span> for lower transaction fees and minimun deposits!</p>
+                  </div>
+
+                  <label class="block text-sm font-medium mb-2">Select Network</label>
+                  <select id="networkSelect" class="w-full p-3 rounded-xl bg-gray-800 border border-gray-600 mb-3 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="Polygon">Polygon/MATIC</option>
+                    <option value="BSC">BSC</option>
+                    <option value="TRON">TRON</option>
+                    <option value="Ethereum">Ethereum</option>
+                    <option value="Solana">Solana</option>
+                    <option value="Arbitrum">Arbitrum</option>
+                    <option value="Optimism">Optimism</option>
+                    <option value="TON">TON</option>
+                    <option value="Other">Other</option>
+                  </select>
+                  <label for="cryptoInput" class="block text-sm font-medium mb-2">Select Cryptocurrency</label>
+                  <div class="dropdown">
+                    <input type="text" id="cryptoInput" placeholder="Buscar..." value="USDTMATIC" class="w-full p-3 rounded-xl bg-gray-800 border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <div id="cryptoDropdown" class="dropdown-content"></div>
+                  </div>
+                  <input type="hidden" id="selectedCrypto">
+
+                <div id="estimateInfo" class="hidden p-4 bg-gray-700 border border-gray-600 rounded-xl">
+                    <div class="text-sm text-gray-200 space-y-1">
+                        <div class="flex justify-between">
+                            <span>You'll receive:</span>
+                            <span id="estimatedAmount" class="font-medium text-blue-400">0.0000</span>
+                        </div>
+                        <div class="flex justify-between text-gray-400">
+                            <span>Rate:</span>
+                            <span id="exchangeRate">1 USD = 0.0000</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="text-xs text-gray-400 mt-1">* NowPayments Fee not included (Up to 1%)</div>
+                <div class="flex flex-col w-full gap-4">
+                    <button type="submit" id="submitBtn"
+                        class="py-2 button w-full selected">
+                        Process Payment
+                    </button>
+                    <a href="/" class="w-full button py-3 text-center"><!--mt-4 text-blue-500 hover:text-blue-700 block text-center w-full">-->
+                        Back to Game
+                    </a>
+                </div>
+            </form>
+        </div>
+
+        <!-- Sección de Payment Info (ahora a la derecha en desktop) -->
+        <div id="paymentDetails"
+            class="hidden flex-1 p-5 bg-gray-800 border border-gray-700 rounded-xl self-start md:self-auto">
+            <h3 class="text-lg font-semibold mb-3 text-gray-100 flex items-center gap-2">
+                <svg class="w-5 h-5 text-green-400" fill="none" stroke="currentColor" stroke-width="2"
+                    viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Payment Details
+            </h3>
+            <div id="paymentInfo" class="text-gray-300 text-sm leading-relaxed"></div>
+            <div id="qrCode" class="mt-6 flex flex-col items-center gap-3 p-5 rounded-2xl bg-gray-700/50 border border-gray-600 shadow-inner transition"></div>
+        </div>
+    </div>
+
+    <script>
+    
+        let selectedCrypto = 'btc';
+        let availableCurrencies = [];
+        
+        // Configurar la URL base de la API
+        const API_BASE_URL = '';
+        
+        // Función para actualizar la interfaz según la criptomoneda seleccionada
+        function updateInterfaceForCrypto() {
+            const amountLabel = document.getElementById('amountLabel');
+            const amountInput = document.getElementById('amountInput');
+            const estimateInfo = document.getElementById('estimateInfo');
+            updateEstimate();
+        }
+        
+        // Actualizar estimación cuando cambie el monto
+        document.getElementById('amountInput').addEventListener('input', updateEstimate);
+        
+        async function updateEstimate() {
+            const amount = document.getElementById('amountInput').value;
+            if (!amount || amount < 10) return;
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/estimate?amount=${amount}&crypto=${selectedCrypto}`, {
+                    method: 'GET',
+                    credentials: 'include'
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    document.getElementById('estimateInfo').classList.remove('hidden');
+                    document.getElementById('estimatedAmount').textContent = data.estimated_amount + ' ' + selectedCrypto.toUpperCase();
+                    document.getElementById('exchangeRate').textContent = `1 USD = ${data.rate}`;
+                }
+            } catch (error) {
+                console.error('Error getting estimate:', error);
+            }
+        }
+        
+        document.getElementById('paymentForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const amount = document.getElementById('amountInput').value;
+            const submitBtn = document.getElementById('submitBtn');
+            
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Processing...';
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/create-payment`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ 
+                        amount: parseFloat(amount),
+                        crypto: selectedCrypto
+                    }),
+                    credentials: 'include'
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    document.getElementById('paymentDetails').classList.remove('hidden');
+                    document.getElementById('paymentInfo').innerHTML = `
+                        <p><strong>Payment ID:</strong> ${data.payment.id}</p>
+                        <p><strong>Monto a pagar:</strong> ${data.payment.payAmount} ${data.payment.payCurrency.toUpperCase()}</p>
+                        <p><strong>Address:</strong> <code class="bg-gray-200 px-2 py-1 rounded">${data.payment.payAddress}</code></p>
+                        <p class="text-sm text-gray-600 mt-2">Please send the exact amount to the address above. Your balance will be updated automatically once the payment is confirmed.</p>
+                        <div class="mt-4 flex justify-center">
+                            <button id="checkStatusBtn"
+                                class="flex items-center justify-center gap-2 px-5 py-3 rounded-xl 
+                                       bg-gradient-to-r from-green-500 to-emerald-600 
+                                       hover:from-green-600 hover:to-emerald-700 
+                                       text-white font-semibold text-sm shadow-lg 
+                                       hover:shadow-xl transition-all transform hover:scale-105 active:scale-95">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v6h6M20 20v-6h-6M4 20h6v-6M20 4h-6v6" />
+                                </svg>
+                                Check Payment Status
+                            </button>
+                        </div>
+                    `;
+                    
+                    // Generar QR code
+                    if (data.payment.qrCode) {
+                        const qrContainer = document.getElementById('qrCode');
+                        qrContainer.innerHTML = '';
+                        new QRCode(qrContainer, {
+                            text: data.payment.qrCode,
+                            width: 200,
+                            height: 200,
+                            colorDark: "#000000",
+                            colorLight: "#ffffff",
+                            correctLevel: QRCode.CorrectLevel.H
+                        });
+                    }
+                    
+                    submitBtn.textContent = 'Payment Created Successfully';
+                    
+                    // Agregar funcionalidad para verificar estado
+                    document.getElementById('checkStatusBtn').addEventListener('click', async function() {
+                        this.disabled = true;
+                        this.textContent = 'Checking...';
+                        
+                        try {
+                            const statusResponse = await fetch(`${API_BASE_URL}/api/payment-status?payment_id=${data.payment.id}`, {
+                                method: 'GET',
+                                credentials: 'include'
+                            });
+                            
+                            const statusData = await statusResponse.json();
+                            
+                            if (statusData.success) {
+                                this.textContent = `Status: ${statusData.status}`;
+                                this.className = statusData.status === 'finished' ? 
+                                    'mt-3 bg-green-600 text-white px-4 py-2 rounded text-sm' : 
+                                    'mt-3 bg-yellow-600 text-white px-4 py-2 rounded text-sm';
+                                
+                                if (statusData.status === 'finished') {
+                                    // Mostrar mensaje de éxito
+                                    document.getElementById('paymentInfo').innerHTML += `
+                                        <div class="mt-4 p-3 bg-green-100 border border-green-400 text-green-700 rounded">
+                                            <strong>✅ Payment Completed!</strong><br>
+                                            Your balance has been updated. Redirecting to game...
+                                        </div>
+                                    `;
+                                    setTimeout(() => {
+                                        window.location.href = '/?payment=success';
+                                    }, 3000);
+                                }
+                            } else {
+                                this.textContent = 'Error checking status';
+                                this.className = 'mt-3 bg-red-600 text-white px-4 py-2 rounded text-sm';
+                            }
+                        } catch (error) {
+                            this.textContent = 'Error checking status';
+                            this.className = 'mt-3 bg-red-600 text-white px-4 py-2 rounded text-sm';
+                        }
+                    });
+                    
+                    // Verificación automática cada 30 segundos
+                    let checkInterval = setInterval(async function() {
+                        try {
+                            const statusResponse = await fetch(`${API_BASE_URL}/api/payment-status?payment_id=${data.payment.id}`, {
+                                method: 'GET',
+                                credentials: 'include'
+                            });
+                            
+                            const statusData = await statusResponse.json();
+                            
+                            if (statusData.success && statusData.status === 'finished') {
+                                clearInterval(checkInterval);
+                                
+                                // Mostrar mensaje de éxito automático
+                                document.getElementById('paymentInfo').innerHTML += `
+                                    <div class="mt-4 p-3 bg-green-100 border border-green-400 text-green-700 rounded">
+                                        <strong>🎉 Payment Completed Automatically!</strong><br>
+                                        Your balance has been updated. Redirecting to game...
+                                    </div>
+                                `;
+                                
+                                setTimeout(() => {
+                                    window.location.href = '/?payment=success';
+                                }, 3000);
+                            }
+                        } catch (error) {
+                            console.error('Auto-check error:', error);
+                        }
+                    }, 30000); // Verificar cada 30 segundos
+                } else {
+                    alert('Error: ' + data.error);
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = 'Process Payment';
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Error processing payment. Please try again.');
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Process Payment';
+            }
+        });
+        const input = document.getElementById('cryptoInput');
+        const dropdown = document.getElementById('cryptoDropdown');
+        const hiddenInput = document.getElementById('selectedCrypto');
+        const networkSelect = document.getElementById('networkSelect');
+
+        let allCurrencies = [];
+
+        // Mostrar dropdown al enfocar
+        input.addEventListener('focus', () => dropdown.style.display = 'block');
+
+        // Filtrar por buscador y por red
+        input.addEventListener('input', filtrarDropdown);
+        networkSelect.addEventListener('change', filtrarDropdown);
+
+        function filtrarDropdown() {
+          const search = input.value.toLowerCase();
+          const networkFilter = networkSelect.value;
+          dropdown.querySelectorAll('.dropdown-item').forEach(item => {
+            const textMatch = item.textContent.toLowerCase().includes(search);
+            const networkMatch = networkFilter === 'All' || item.dataset.network === networkFilter;
+            item.style.display = (textMatch && networkMatch) ? 'flex' : 'none';
+          });
+        }
+
+        // Ocultar dropdown al hacer click fuera
+        document.addEventListener('click', e => {
+          if (!e.target.closest('.dropdown')) dropdown.style.display = 'none';
+        });
+
+        // Cargar monedas
+        async function cargarCryptos() {
+          const nowRes = await fetch(`${API_BASE_URL}/api/currencies`, {
+              method: 'GET',
+              credentials: 'include'
+          });
+          const nowData = await nowRes.json();
+          const nowCurrencies = nowData.currencies;
+
+          const getNetwork = (currency) => {
+            const name = currency.toLowerCase();
+            if (name.includes('matic')) return 'Polygon';
+            if (name.includes('bsc')) return 'BSC';
+            if (name.includes('trc20')) return 'TRON';
+            if (name.includes('erc20')) return 'Ethereum';
+            if (name.includes('sol')) return 'Solana';
+            if (name.includes('arb')) return 'Arbitrum';
+            if (name.includes('op')) return 'Optimism';
+            if (name.includes('ton')) return 'TON';
+            return 'Other';
+          };
+
+
+          allCurrencies = nowCurrencies.map(c => ({
+            ...c,
+            network: getNetwork(c.currency)
+          }));
+
+          renderDropdown();
+        }
+
+        function renderDropdown() {
+          dropdown.innerHTML = '';
+          allCurrencies.forEach(c => {
+            const div = document.createElement('div');
+            div.className = 'dropdown-item uppercase';
+            div.dataset.value = c.currency;
+            div.dataset.network = c.network;
+
+            const cur = c.currency.toUpperCase();
+
+            // Destacar USDTMATIC y USDCMATIC
+            let highlightStyle = '';
+            let minAmount = c.min_amount || 0;
+            if (cur === "USDTMATIC" || cur === "USDCMATIC") {
+              minAmount = 2; // comisión mínima
+              if(cur === "USDTMATIC"){
+                  input.value = cur;
+                  hiddenInput.value = c.currency;
+                  selectedCrypto = cur.toLowerCase();
+                  dropdown.style.display = 'none';
+                  document.getElementById("amountInput").min = c.min_amount;
+                  document.getElementById("amountInput").value = c.min_amount;
+              }
+              div.style = 'background-color: #948A00; color: white; font-weight: bold; border-radius: 0.5rem;';
+            }
+            else{
+              minAmount = 15;
+            }
+
+            div.innerHTML = `
+              <div class="flex items-center" style="${highlightStyle}">
+                ${cur}
+              </div>
+              <span class="text-gray-300 text-sm">Min ${minAmount} ${cur}</span>
+            `;
+
+            div.addEventListener('click', () => {
+              input.value = cur;
+              hiddenInput.value = c.currency;
+              selectedCrypto = cur.toLowerCase();
+              dropdown.style.display = 'none';
+              document.getElementById("amountInput").min = c.min_amount;
+              document.getElementById("amountInput").value = c.min_amount;
+              updateInterfaceForCrypto();
+            });
+
+            dropdown.appendChild(div);
+          });
+          filtrarDropdown();
+        }
+
+        // Inicializar
+        cargarCryptos();
+    </script>
+</body>
+</html>

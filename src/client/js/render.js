@@ -39,11 +39,11 @@ const drawCellWithSkin = (cell, graph) => {
     
     // Debug: verificar si la skin está cargada
     if (!skinImagesLoaded[skinId]) {
-        console.log(`[SKIN_DEBUG] Skin ${skinId} no está cargada para célula ${cell.name}`);
+        // console.log(`[SKIN_DEBUG] Skin ${skinId} no está cargada para célula ${cell.name}`);
     }
     
     if (skinImagesLoaded[skinId] && skinImages[skinId]) {
-        console.log(`[SKIN_DEBUG] Dibujando skin ${skinId} para célula ${cell.name}`);
+        // console.log(`[SKIN_DEBUG] Dibujando skin ${skinId} para célula ${cell.name}`);
         
         // Crear un patrón de recorte circular para la skin
         graph.save();
@@ -71,7 +71,7 @@ const drawCellWithSkin = (cell, graph) => {
         graph.stroke();
     } else {
         // Fallback: dibujar con color si la imagen no está cargada
-        console.log(`[SKIN_DEBUG] Usando fallback de color para célula ${cell.name} (skinId: ${skinId})`);
+        // console.log(`[SKIN_DEBUG] Usando fallback de color para célula ${cell.name} (skinId: ${skinId})`);
         graph.fillStyle = cell.color;
         graph.strokeStyle = cell.borderColor;
         graph.lineWidth = 6;
@@ -931,7 +931,11 @@ const drawAdvancedCompass = (player, users, screen, graph, globalConfig) => {
 
 // Función para dibujar una brújula de radar que detecta células a larga distancia
 const drawRadarCompass = (player, users, screen, graph, globalConfig) => {
-    if (!player || !users || users.length === 0) return;
+    console.log('[RADAR_COMPASS] Iniciando drawRadarCompass');
+    if (!player || !users || users.length === 0) {
+        console.log('[RADAR_COMPASS] Retornando - player:', !!player, 'users:', !!users, 'users.length:', users?.length);
+        return;
+    }
     
     // Configuración del radar
     const radarRadius = 100;
@@ -964,7 +968,11 @@ const drawRadarCompass = (player, users, screen, graph, globalConfig) => {
         }
     }
     
-    if (detectedCells.length === 0) return; // No hay células detectadas
+    console.log('[RADAR_COMPASS] Células detectadas:', detectedCells.length);
+    if (detectedCells.length === 0) {
+        console.log('[RADAR_COMPASS] No hay células detectadas, retornando');
+        return;
+    } // No hay células detectadas
     
     // Ordenar por importancia y tomar las más importantes
     detectedCells.sort((a, b) => b.importance - a.importance);
@@ -1371,6 +1379,48 @@ const drawSimpleRadarCompass = (player, screen, graph, globalConfig) => {
     console.log('[SIMPLE_RADAR] Brújula dibujada hacia', targetCell.playerName);
 };
 
+// Función para dibujar el ping de latencia
+const drawPing = (ping, screen, graph) => {
+    if (!ping || ping <= 0) return;
+    
+    // Posición en la esquina superior derecha
+    const x = screen.width - 80;
+    const y = 30;
+    
+    // Color basado en la latencia
+    let color;
+    if (ping < 50) {
+        color = '#00FF00'; // Verde - excelente
+    } else if (ping < 100) {
+        color = '#FFFF00'; // Amarillo - bueno
+    } else if (ping < 200) {
+        color = '#FFA500'; // Naranja - regular
+    } else {
+        color = '#FF0000'; // Rojo - malo
+    }
+    
+    // Fondo semi-transparente
+    graph.fillStyle = 'rgba(0, 0, 0, 0.7)';
+    graph.fillRect(x - 10, y - 15, 70, 30);
+    
+    // Borde
+    graph.strokeStyle = color;
+    graph.lineWidth = 2;
+    graph.strokeRect(x - 10, y - 15, 70, 30);
+    
+    // Texto del ping
+    graph.fillStyle = color;
+    graph.font = 'bold 14px Arial';
+    graph.textAlign = 'center';
+    graph.textBaseline = 'middle';
+    graph.fillText(`${ping}ms`, x + 25, y);
+    
+    // Indicador de calidad
+    const quality = ping < 50 ? 'Excelente' : ping < 100 ? 'Bueno' : ping < 200 ? 'Regular' : 'Malo';
+    graph.font = '10px Arial';
+    graph.fillText(quality, x + 25, y + 15);
+};
+
 module.exports = {
     drawFood,
     drawPowerFood,
@@ -1387,5 +1437,6 @@ module.exports = {
     drawAdvancedCompass,
     drawRadarCompass,
     drawBackgroundRadar,
-    drawSimpleRadarCompass
+    drawSimpleRadarCompass,
+    drawPing
 };

@@ -6,15 +6,51 @@
   <title>Historial - Splitta.io</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
-    body {
-      background: #0f1115;
-      min-height: 100vh;
-      color: #e5e7eb;
+    html, body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        background: #0a0a0f;
+        overflow: hidden;
+        font-family: 'Segoe UI', sans-serif;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        color: #fff;
+        z-index: -2;
     }
+
+    /* Fondo animado */
+    body::before, body::after {
+        content: '';
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        width: 8em;
+        height: 8em;
+        border-radius: 50%;
+        background: radial-gradient(circle, hsla(40, 100%, 50%, 0.25) 25%, transparent 70%);
+        mix-blend-mode: screen;
+        animation: move 45s infinite alternate ease-in-out;
+        z-index: -1;
+    }
+
+    body::after {
+        background: radial-gradient(circle, hsla(55, 100%, 60%, 0.2) 25%, transparent 70%);
+        animation-duration: 50s;
+        animation-delay: -25s;
+        z-index: -1;
+    }
+
+    @keyframes move {
+        from { transform: rotate(0deg) scale(8) translateX(-60px); }
+        to { transform: rotate(360deg) scale(12) translateX(60px); }
+    }
+    
     .card {
-      background: rgba(255, 255, 255, 0.03);
+      background: rgba(17, 17, 17, 0.55);
       backdrop-filter: blur(12px);
-      border: 1px solid rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(17, 17, 17, 0.85);
     }
     table th, table td {
       padding: 0.75rem 0.5rem;
@@ -58,23 +94,25 @@
       <div class="card rounded-xl p-6">
         <h2 class="text-xl font-medium mb-4">🎮 Tus Partidas</h2>
         <div class="overflow-x-auto">
-          <table class="w-full text-sm border-collapse">
-            <thead>
-              <tr class="text-gray-400 text-xs uppercase tracking-wide">
-                <th class="text-left">Fecha</th>
-                <th class="text-left">Apuesta</th>
-                <th class="text-left">Final</th>
-                <th class="text-left">Devuelto</th>
-                <th class="text-left">Resultado</th>
-                <th class="text-left">Duración</th>
-                <th class="text-left">Masa Máx.</th>
-                <th class="text-left">Motivo</th>
-              </tr>
-            </thead>
-            <tbody id="historyTable" class="divide-y divide-gray-800">
-              <!-- Contenido dinámico -->
-            </tbody>
-          </table>
+          <div class="max-h-96 overflow-y-auto">
+            <table class="w-full text-sm border-collapse">
+              <thead class="sticky top-0 bg-gray-900/80 backdrop-blur-sm">
+                <tr class="text-gray-400 text-xs uppercase tracking-wide">
+                  <th class="text-left py-3 px-2">Fecha</th>
+                  <th class="text-left py-3 px-2">Apuesta</th>
+                  <th class="text-left py-3 px-2">Final</th>
+                  <th class="text-left py-3 px-2">Devuelto</th>
+                  <th class="text-left py-3 px-2">Resultado</th>
+                  <th class="text-left py-3 px-2">Duración</th>
+                  <th class="text-left py-3 px-2">Masa Máx.</th>
+                  <th class="text-left py-3 px-2">Motivo</th>
+                </tr>
+              </thead>
+              <tbody id="historyTable" class="divide-y divide-gray-800">
+                <!-- Contenido dinámico -->
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </div>

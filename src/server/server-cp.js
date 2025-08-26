@@ -54,170 +54,6 @@ const INIT_MASS_LOG = util.mathLog(config.defaultPlayerMass, config.slowBase);
 let leaderboard = [];
 let leaderboardChanged = false;
 
-// Variables para estadísticas en tiempo real
-let globalWinnings = 0;
-let totalBetsPlaced = 0;
-let statsUpdateInterval = null;
-
-// Función para emitir estadísticas en tiempo real
-function emitStats() {
-    const connectedPlayers = Object.keys(sockets).length;
-    const stats = {
-        playersOnline: connectedPlayers,
-        globalWinnings: globalWinnings.toFixed(2)
-    };
-    io.emit('statsUpdate', stats);
-}
-
-// Función para obtener estadísticas actuales
-function getCurrentStats() {
-    const connectedPlayers = Object.keys(sockets).length;
-    return {
-        playersOnline: connectedPlayers,
-        globalWinnings: globalWinnings.toFixed(2)
-    };
-}
-
-// Función para actualizar estadísticas globales en la base de datos
-function updateGlobalStats(winningsToAdd = 0, betsToAdd = 0, gamesToAdd = 0) {
-    return new Promise((resolve, reject) => {
-        db.run(`UPDATE global_stats SET 
-                total_winnings = total_winnings + ?, 
-                total_bets_placed = total_bets_placed + ?, 
-                total_games_played = total_games_played + ?,
-                last_updated = CURRENT_TIMESTAMP 
-                WHERE id = 1`, 
-                [winningsToAdd, betsToAdd, gamesToAdd], 
-                function(err) {
-                    if (err) {
-                        console.error('[GLOBAL_STATS] Error actualizando estadísticas globales:', err);
-                        reject(err);
-                    } else {
-                        console.log(`[GLOBAL_STATS] Estadísticas globales actualizadas: +$${winningsToAdd} ganancias, +$${betsToAdd} apuestas, +${gamesToAdd} partidas`);
-                        resolve();
-                    }
-                });
-    });
-}
-
-// Función para actualizar leaderboard de un jugador
-function updatePlayerLeaderboard(userId, username, gameResult) {
-    return new Promise((resolve, reject) => {
-        // Primero, verificar si el jugador ya existe en el leaderboard
-        db.get(`SELECT * FROM player_leaderboard WHERE user_id = ?`, [userId], (err, row) => {
-            if (err) {
-                console.error('[LEADERBOARD] Error verificando jugador:', err);
-                reject(err);
-                return;
-            }
-
-            if (row) {
-                // Actualizar jugador existente
-                const newTotalWinnings = row.total_winnings + (gameResult.winnings || 0);
-                const newTotalGames = row.total_games_played + 1;
-                const newGamesWon = row.total_games_won + (gameResult.resultType === 'win' ? 1 : 0);
-                const newGamesLost = row.total_games_lost + (gameResult.resultType === 'loss' ? 1 : 0);
-                const newGamesTied = row.total_games_tied + (gameResult.resultType === 'tie' ? 1 : 0);
-                const newBiggestWin = Math.max(row.biggest_win, gameResult.winnings || 0);
-                const newTotalBets = row.total_bets_placed + (gameResult.betAmount || 0);
-                const newWinRate = newGamesWon / newTotalGames * 100;
-
-                db.run(`UPDATE player_leaderboard SET 
-                        total_winnings = ?, 
-                        total_games_played = ?,
-                        total_games_won = ?,
-                        total_games_lost = ?,
-                        total_games_tied = ?,
-                        biggest_win = ?,
-                        total_bets_placed = ?,
-                        win_rate = ?,
-                        last_updated = CURRENT_TIMESTAMP 
-                        WHERE user_id = ?`, 
-                        [newTotalWinnings, newTotalGames, newGamesWon, newGamesLost, newGamesTied, 
-                         newBiggestWin, newTotalBets, newWinRate, userId], 
-                        function(err) {
-                            if (err) {
-                                console.error('[LEADERBOARD] Error actualizando jugador:', err);
-                                reject(err);
-                            } else {
-                                console.log(`[LEADERBOARD] Jugador ${username} actualizado: $${newTotalWinnings} total, ${newWinRate.toFixed(1)}% win rate`);
-                                resolve();
-                            }
-                        });
-            } else {
-                // Crear nuevo jugador en el leaderboard
-                const winRate = gameResult.resultType === 'win' ? 100 : 0;
-                db.run(`INSERT INTO player_leaderboard 
-                        (user_id, username, total_winnings, total_games_played, total_games_won, 
-                         total_games_lost, total_games_tied, biggest_win, total_bets_placed, win_rate) 
-                        VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?)`, 
-                        [userId, username, gameResult.winnings || 0, 
-                         gameResult.resultType === 'win' ? 1 : 0,
-                         gameResult.resultType === 'loss' ? 1 : 0,
-                         gameResult.resultType === 'tie' ? 1 : 0,
-                         gameResult.winnings || 0, gameResult.betAmount || 0, winRate], 
-                        function(err) {
-                            if (err) {
-                                console.error('[LEADERBOARD] Error creando jugador:', err);
-                                reject(err);
-                            } else {
-                                console.log(`[LEADERBOARD] Nuevo jugador ${username} agregado al leaderboard`);
-                                resolve();
-                            }
-                        });
-            }
-        });
-    });
-}
-
-// Función para obtener el top 10 del leaderboard
-function getTopLeaderboard() {
-    return new Promise((resolve, reject) => {
-        db.all(`SELECT username, total_winnings, total_games_played, total_games_won, 
-                       total_games_lost, total_games_tied, biggest_win, win_rate 
-                FROM player_leaderboard 
-                ORDER BY total_winnings DESC 
-                LIMIT 10`, 
-                (err, rows) => {
-                    if (err) {
-                        console.error('[LEADERBOARD] Error obteniendo top 10:', err);
-                        reject(err);
-                    } else {
-                        resolve(rows);
-                    }
-                });
-    });
-}
-
-// Función para cargar estadísticas globales desde la base de datos
-function loadGlobalStatsFromDB() {
-    return new Promise((resolve, reject) => {
-        db.get(`SELECT total_winnings, total_bets_placed, total_games_played FROM global_stats WHERE id = 1`, (err, row) => {
-            if (err) {
-                console.error('[GLOBAL_STATS] Error cargando estadísticas:', err);
-                reject(err);
-            } else if (row) {
-                globalWinnings = row.total_winnings;
-                totalBetsPlaced = row.total_bets_placed;
-                console.log(`[GLOBAL_STATS] Estadísticas cargadas: $${globalWinnings} ganancias, $${totalBetsPlaced} apuestas, ${row.total_games_played} partidas`);
-                resolve();
-            } else {
-                console.log('[GLOBAL_STATS] No se encontraron estadísticas, usando valores por defecto');
-                resolve();
-            }
-        });
-    });
-}
-
-// Iniciar el intervalo de actualización de estadísticas
-function startStatsUpdate() {
-    if (statsUpdateInterval) {
-        clearInterval(statsUpdateInterval);
-    }
-    statsUpdateInterval = setInterval(emitStats, 2000); // Actualizar cada 2 segundos
-    emitStats(); // Emitir inmediatamente
-}
-
 const Vector = SAT.Vector;
 
 // Configuración de sesión
@@ -736,23 +572,23 @@ app.get('/add-funds', (req, res) => {
                     const amountInput = document.getElementById('amount');
                     const estimateInfo = document.getElementById('estimateInfo');
 
-		            amountLabel.textContent = 'Amount (USDT)';
+		    amountLabel.textContent = 'Amount (USDT)';
 
-		            const c = selectedCrypto;
+		    const c = selectedCrypto;
 
                     if (selectedCrypto === 'usdtmatic') {
-                        amountInput.min = 2;
-                        amountInput.value = 2;
+                        amountInput.min = '1';
+                        amountInput.value = '1';
 //                        estimateInfo.classList.add('hidden');
-	                } else if ((c.includes("usdt") || c.includes("usdc") || c.includes("fdusd")) && (c.includes("bsc") || c.includes("sol"))) {
-                        amountInput.min = 5;
-                        amountInput.value = 5;
+	            } else if ((c.includes("usdt") || c.includes("usdc") || c.includes("fdusd")) && (c.includes("BSC") || c.includes("SOL"))) {
+                        amountInput.min = '5';
+                        amountInput.value = '5';
                     } else {
-                        amountInput.min = 15;
-                        amountInput.value = 15;
+                        amountInput.min = '15';
+                        amountInput.value = '15';
                         updateEstimate();
                     }
-		            updateEstimate();
+		    updateEstimate();
                 }
                 
                 // Actualizar estimación cuando cambie el monto
@@ -948,20 +784,32 @@ app.get('/add-funds', (req, res) => {
 // Endpoint para obtener monedas disponibles
 app.get('/api/currencies', async (req, res) => {
     try {
-        const NOWPAYMENTS_API_KEY = process.env.NOWPAYMENTS_API_KEY;
+        console.log('[NOWPAYMENTS] Obteniendo monedas disponibles');
+        
+        // Configuración de NOWPayments
+        const NOWPAYMENTS_API_KEY = process.env.NOWPAYMENTS_API_KEY || '9Y86N0F-CB34G0D-KMB5ZAZ-JZR9J46';
         const NOWPAYMENTS_API_URL = 'https://api.nowpayments.io/v1';
 
-        const response = await fetch(`${NOWPAYMENTS_API_URL}/currencies?fixed_rate=true`, {
+        // Obtener monedas disponibles
+        const currenciesResponse = await fetch(`${NOWPAYMENTS_API_URL}/currencies`, {
             method: 'GET',
             headers: {
                 'x-api-key': NOWPAYMENTS_API_KEY
             }
         });
+        
+        const currenciesData = await currenciesResponse.json();
+        console.log('[NOWPAYMENTS] Monedas disponibles:', currenciesData);
+        
+        if (!currenciesResponse.ok) {
+            console.error('[NOWPAYMENTS] Error obteniendo monedas:', currenciesData);
+            return res.status(500).json({ error: 'Error obteniendo monedas disponibles' });
+        }
 
-        const data = await response.json();
-
-        // Reenvía la respuesta tal cual a tu frontend
-        res.status(response.status).json(data);
+        res.json({
+            success: true,
+            currencies: currenciesData.currencies || []
+        });
 
     } catch (error) {
         console.error('[NOWPAYMENTS] Error en currencies:', error);
@@ -1083,14 +931,14 @@ app.post('/api/create-payment', async (req, res) => {
             feePaidByUser = false;
         }
         // Configuración especial para USDTERC20
-        else if ((c.includes("usdt") || c.includes("usdc") || c.includes("fdusd")) && (c.includes("bsc") || c.includes("sol"))) {
+        else if ((c.includes("usdt") || c.includes("usdc") || c.includes("fdusd")) && (c.includes("BSC") || c.includes("SOL"))) {
             adjustedAmount = Math.max(amount, 5); // Mínimo $5 USDT en ERC20
         }
         // Si la criptomoneda es USDT (pero no USDTMATIC), usar la misma criptomoneda como moneda de precio
         else {
             adjustedAmount = Math.max(amount, 15); // Mínimo $5 USDT para otros
-	        fixedRate = true;
-	        feePaidByUser = true;
+	    fixedRate = true;
+	    feePaidByUser = true;
         }
         
         // Crear el pago usando la API de NOWPayments
@@ -1106,10 +954,10 @@ app.post('/api/create-payment', async (req, res) => {
         };
 
         // Agregar payout_address y payout_currency solo para USDTMATIC
-        /*if (crypto.toLowerCase() === 'usdtmatic') {
+        if (crypto.toLowerCase() === 'usdtmatic') {
             paymentData.payout_address = '0x9d2fd4bdb798ac2cd108c5435564ceeeb28d1178';
             paymentData.payout_currency = 'usdtmatic';
-        }*/
+        }
 
 
 
@@ -1131,7 +979,7 @@ app.post('/api/create-payment', async (req, res) => {
             console.error('[NOWPAYMENTS] Error creando pago:', paymentResponse);
             return res.status(500).json({ error: 'Error al crear el pago' });
         }
-        
+
         console.log(`[NOWPAYMENTS] Pago creado exitosamente - ID: ${paymentResponse.payment_id}`);
 
         // Generar QR code para la dirección de pago
@@ -1389,6 +1237,7 @@ app.post('/api/voluntaryDisconnect', async (req, res) => {
         console.log('[API] Dinero en juego (betAmount):', betAmount);
         console.log('[API] Masa máxima (maxMass):', maxMass);
         console.log('[API] Duración (duration):', duration);
+        console.log('[API] Razón de desconexión (disconnectReason):', disconnectReason);
         
         let user = null;
         
@@ -1412,7 +1261,6 @@ app.post('/api/voluntaryDisconnect', async (req, res) => {
         console.log('[API] === LÓGICA DE CASHOUT SIMPLIFICADA ===');
         console.log('[API] Apuesta original:', originalBet);
         console.log('[API] Dinero en juego:', betAmount);
-        console.log('[API] Razón de desconexión:', disconnectReason);
 
         // Lógica de cashout simplificada según tus reglas
         if (disconnectReason === 'eaten') {
@@ -1442,33 +1290,11 @@ app.post('/api/voluntaryDisconnect', async (req, res) => {
             const netWinnings = winnings - commissionApplied;
             returnedAmount = originalBet + netWinnings;
             
-            // Actualizar estadísticas globales
-            globalWinnings += winnings;
-            
-            // Actualizar estadísticas en la base de datos
-            updateGlobalStats(winnings, 0, 1)
-                .then(() => {
-                    // Actualizar leaderboard del jugador
-                    const gameResult = {
-                        winnings: winnings,
-                        resultType: 'win',
-                        betAmount: originalBet
-                    };
-                    return updatePlayerLeaderboard(user.id, user.username, gameResult);
-                })
-                .catch(err => {
-                    console.error('[API] Error actualizando estadísticas:', err);
-                });
-            
             console.log(`[API] Ganancia neta: $${winnings} | Comisión (10%): $${commissionApplied} | Ganancia neta final: $${netWinnings}`);
         }
         
         if (returnedAmount > 0) {
             finalBalance = await authRepository.addWinnings(user.id, returnedAmount);
-        } else if (disconnectReason === 'eaten') {
-            // Si el jugador fue comido, mantener el balance actual (ya se descontó al iniciar)
-            finalBalance = user.balance;
-            console.log('[API] Jugador comido - Balance mantenido:', finalBalance);
         }
         
         // Registrar en el historial (buscar la partida activa más reciente)
@@ -1491,15 +1317,8 @@ app.post('/api/voluntaryDisconnect', async (req, res) => {
             if (gameRow) {
                 console.log(`[API] Encontrada partida activa - ID: ${gameRow.id}`);
                 const finalDisconnectReason = disconnectReason || 'manual_cashout';
-                
-                // Si el jugador fue comido, el dinero final debe ser 0
-                const finalAmount = (disconnectReason === 'eaten') ? 0 : betAmount;
-                
-                await recordGameEnd(gameRow.id, finalAmount, resultType, commissionApplied, finalDisconnectReason, maxMass || 0);
-                console.log(`[API] Partida registrada en historial - ID: ${gameRow.id}, Resultado: ${resultType}, Razón: ${finalDisconnectReason}, Masa: ${maxMass}, Duración: ${duration}, Dinero final: ${finalAmount}`);
-        
-        // Emitir estadísticas actualizadas
-        emitStats();
+                await recordGameEnd(gameRow.id, betAmount, resultType, commissionApplied, finalDisconnectReason, maxMass || 0);
+                console.log(`[API] Partida registrada en historial - ID: ${gameRow.id}, Resultado: ${resultType}, Razón: ${finalDisconnectReason}, Masa: ${maxMass}, Duración: ${duration}`);
             } else {
                 console.log(`[API] No se encontró partida activa para el usuario ${user.id}`);
             }
@@ -1508,40 +1327,6 @@ app.post('/api/voluntaryDisconnect', async (req, res) => {
         }
         
         console.log('[API] Respuesta final - Devolviendo:', returnedAmount, 'Nuevo balance:', finalBalance);
-        
-        // ALERTA GLOBAL: Notificar a todos los jugadores sobre el cashout usando el mismo sistema que combatAlert
-        if (disconnectReason !== 'eaten') { // Solo para cashouts manuales, no para jugadores comidos
-            // Buscar el jugador en el mapa para obtener su posición
-            const playerInGame = map.players.data.find(p => p.name === user.username);
-            if (playerInGame) {
-                io.emit('combatAlert', {
-                    eaterName: user.username,
-                    eatenName: 'CASHOUT',
-                    eaterId: playerInGame.id, // ID del jugador para seguimiento en tiempo real
-                    message: `¡${user.username} hizo cashout con $${betAmount}! ${resultType === 'win' ? '¡GANÓ!' : resultType === 'tie' ? 'EMPATÓ' : 'PERDIÓ'}`
-                });
-                
-                console.log(`[CASHOUT_ALERT] Alerta global enviada: ${user.username} (ID: ${playerInGame.id}) hizo cashout con $${betAmount}`);
-            }
-        }
-        
-        // Actualizar estadísticas en la base de datos para todas las partidas
-        const gameResult = {
-            winnings: resultType === 'win' ? (betAmount - originalBet) : 0,
-            resultType: resultType,
-            betAmount: originalBet
-        };
-        
-        updateGlobalStats(0, 0, 1)
-            .then(() => {
-                return updatePlayerLeaderboard(user.id, user.username, gameResult);
-            })
-            .catch(err => {
-                console.error('[API] Error actualizando estadísticas:', err);
-            });
-        
-        // Emitir estadísticas actualizadas
-        emitStats();
         
         res.json({ 
             success: true, 
@@ -1663,15 +1448,6 @@ const addPlayer = (socket) => {
             
             io.emit('playerJoin', { name: currentPlayer.name });
             console.log(`[BET] Player ${currentPlayer.name} joined with $${playerBetAmount}`);
-            
-            // Actualizar estadísticas globales
-            if (playerBetAmount > 0) {
-                totalBetsPlaced += playerBetAmount;
-                globalWinnings += playerBetAmount;
-            }
-            
-            // Emitir estadísticas actualizadas
-            emitStats();
             console.log('Total players: ' + map.players.data.length);
         }
 
@@ -1679,10 +1455,6 @@ const addPlayer = (socket) => {
 
     socket.on('pingcheck', () => {
         socket.emit('pongcheck');
-    });
-
-    socket.on('ping', () => {
-        socket.emit('pong');
     });
 
     socket.on('windowResized', (data) => {
@@ -1703,9 +1475,8 @@ const addPlayer = (socket) => {
 
     socket.on('disconnect', async () => {
         // Solo procesar cashout automático si NO es una desconexión voluntaria
-        // y el jugador tenía una apuesta activa y NO fue comido
-        if (playerUserId && playerBetAmount > 0 && currentPlayer.originalBetAmount > 0 && 
-            !currentPlayer.voluntaryExit && !currentPlayer.wasEaten) {
+        // y el jugador tenía una apuesta activa
+        if (playerUserId && playerBetAmount > 0 && currentPlayer.originalBetAmount > 0 && !currentPlayer.voluntaryExit) {
             try {
                 const currentMoney = currentPlayer.getTotalMoney() || playerBetAmount;
                 const maxMass = currentPlayer.massTotal || 0;
@@ -1723,8 +1494,6 @@ const addPlayer = (socket) => {
             } catch (error) {
                 console.error('[DISCONNECT] Error procesando cashout automático:', error);
             }
-        } else if (currentPlayer.wasEaten) {
-            console.log(`[DISCONNECT] ${currentPlayer.name} fue comido - no procesando cashout automático`);
         } else if (currentPlayer.voluntaryExit) {
             console.log(`[DISCONNECT] ${currentPlayer.name} se desconectó voluntariamente - no procesando cashout automático`);
         } else {
@@ -1739,9 +1508,6 @@ const addPlayer = (socket) => {
         map.players.removePlayerByID(currentPlayer.id);
         console.log('[INFO] User ' + currentPlayer.name + ' has disconnected');
         socket.broadcast.emit('playerDisconnect', { name: currentPlayer.name });
-        
-        // Actualizar estadísticas después de la desconexión
-        emitStats();
     });
 
     socket.on('playerChat', (data) => {
@@ -1870,29 +1636,6 @@ const addPlayer = (socket) => {
         currentPlayer.userSplit(config.limitSplit, config.defaultPlayerMass);
     });
 
-    // Manejar división específica para cashout (4 partes)
-    socket.on('split', (data) => {
-        if (data && data.cellIndex !== undefined && data.pieces) {
-            console.log(`[CASHOUT_SPLIT] ${currentPlayer.name} dividiendo célula ${data.cellIndex} en ${data.pieces} partes`);
-            currentPlayer.splitCell(data.cellIndex, data.pieces, config.defaultPlayerMass);
-        }
-    });
-
-    // Manejar inicio de cashout
-    socket.on('cashoutStarted', (data) => {
-        console.log(`[CASHOUT_STARTED] ${currentPlayer.name} inició cashout con $${data.betAmount}`);
-        
-        // Enviar alerta global usando el sistema combatAlert
-        io.emit('combatAlert', {
-            eaterName: currentPlayer.name,
-            eatenName: 'CASHOUT',
-            eaterId: currentPlayer.id,
-            message: `¡${currentPlayer.name} inició cashout con $${data.betAmount}!`
-        });
-        
-        console.log(`[CASHOUT_ALERT] Alerta global enviada: ${currentPlayer.name} (ID: ${currentPlayer.id}) inició cashout`);
-    });
-
     // Manejar división por virus
     socket.on('virusSplit', () => {
         if (currentPlayer.gameMoney > 0) {
@@ -1919,9 +1662,6 @@ const addSpectator = (socket) => {
         sockets[socket.id] = socket;
         spectators.push(socket.id);
         io.emit('playerJoin', { name: '' });
-        
-        // Emitir estadísticas actuales al espectador
-        emitStats();
     });
 
     socket.emit("welcome", {}, {
@@ -2097,18 +1837,6 @@ const tickPlayer = (currentPlayer) => {
 };
 
 const tickGame = () => {
-    // Limpiar sockets desconectados
-    Object.keys(sockets).forEach(socketId => {
-        if (!sockets[socketId] || !sockets[socketId].connected) {
-            delete sockets[socketId];
-            // Remover de espectadores si está ahí
-            const spectatorIndex = spectators.indexOf(socketId);
-            if (spectatorIndex > -1) {
-                spectators.splice(spectatorIndex, 1);
-            }
-        }
-    });
-    
     map.players.data.forEach(tickPlayer);
     map.massFood.move(config.gameWidth, config.gameHeight);
     
@@ -2167,9 +1895,6 @@ const tickGame = () => {
 
         // NUEVO SISTEMA: GAME OVER inmediato para el jugador comido
         console.log(`[COMBAT_GAME_OVER] ${eatenPlayer.name} fue comido - GAME OVER inmediato`);
-        
-        // Marcar al jugador como comido para evitar auto-cashout
-        eatenPlayer.wasEaten = true;
         
         // Transferir todo el dinero restante del jugador comido al jugador que come
         const remainingMoney = eatenPlayer.getTotalMoney();
@@ -2755,12 +2480,7 @@ async function processAutoCashout(userId, username, currentBetAmount, originalBe
         let resultType, returnedAmount, commissionApplied = 0;
         
         // Aplicar la misma lógica que el cashout manual
-        if (disconnectReason === 'eaten') {
-            // JUGADOR COMIDO: Pérdida total, no se devuelve nada
-            resultType = 'loss';
-            returnedAmount = 0;
-            console.log('[AUTO_CASHOUT] JUGADOR COMIDO - Pérdida total, no se devuelve nada');
-        } else if (currentBetAmount === originalBetAmount) {
+        if (currentBetAmount === originalBetAmount) {
             // EMPATE
             resultType = 'tie';
             returnedAmount = originalBetAmount;
@@ -2776,37 +2496,11 @@ async function processAutoCashout(userId, username, currentBetAmount, originalBe
             const winnings = currentBetAmount - originalBetAmount;
             commissionApplied = winnings * 0.10; // 10% de comisión
             returnedAmount = currentBetAmount - commissionApplied;
-            
-            // Actualizar estadísticas globales
-            globalWinnings += winnings;
-            
-            // Actualizar estadísticas en la base de datos
-            updateGlobalStats(winnings, 0, 1)
-                .then(() => {
-                    // Actualizar leaderboard del jugador
-                    const gameResult = {
-                        winnings: winnings,
-                        resultType: 'win',
-                        betAmount: originalBetAmount
-                    };
-                    return updatePlayerLeaderboard(userId, username, gameResult);
-                })
-                .catch(err => {
-                    console.error('[AUTO_CASHOUT] Error actualizando estadísticas:', err);
-                });
-            
             console.log('[AUTO_CASHOUT] GANANCIA - Aplicando comisión del 10%');
         }
         
         // Actualizar balance del usuario
-        let newBalance;
-        if (disconnectReason === 'eaten') {
-            // Si el jugador fue comido, mantener el balance actual (ya se descontó al iniciar)
-            newBalance = await getCurrentBalance(userId);
-            console.log('[AUTO_CASHOUT] Jugador comido - Balance mantenido:', newBalance);
-        } else {
-            newBalance = await updateUserBalance(userId, returnedAmount);
-        }
+        const newBalance = await updateUserBalance(userId, returnedAmount);
         
         // Registrar en el historial (buscar la partida activa más reciente)
         db.get(`SELECT id FROM game_history 
@@ -2827,24 +2521,6 @@ async function processAutoCashout(userId, username, currentBetAmount, originalBe
         console.log(`[AUTO_CASHOUT] Cashout automático completado para ${username}`);
         console.log(`[AUTO_CASHOUT] Resultado: ${resultType}, Devuelto: $${returnedAmount}, Nuevo balance: $${newBalance}`);
         
-        // Actualizar estadísticas en la base de datos para todas las partidas
-        const gameResult = {
-            winnings: resultType === 'win' ? (currentBetAmount - originalBetAmount) : 0,
-            resultType: resultType,
-            betAmount: originalBetAmount
-        };
-        
-        updateGlobalStats(0, 0, 1)
-            .then(() => {
-                return updatePlayerLeaderboard(userId, username, gameResult);
-            })
-            .catch(err => {
-                console.error('[AUTO_CASHOUT] Error actualizando estadísticas:', err);
-            });
-        
-        // Emitir estadísticas actualizadas
-        emitStats();
-        
         return {
             resultType,
             returnedAmount,
@@ -2856,20 +2532,6 @@ async function processAutoCashout(userId, username, currentBetAmount, originalBe
         console.error('[AUTO_CASHOUT] Error procesando cashout automático:', error);
         throw error;
     }
-}
-
-// Función para obtener el balance actual de usuario
-function getCurrentBalance(userId) {
-    return new Promise((resolve, reject) => {
-        db.get(`SELECT balance FROM users WHERE id = ?`, [userId], (err, row) => {
-            if (err) {
-                console.error('[AUTO_CASHOUT] Error obteniendo balance:', err);
-                reject(err);
-            } else {
-                resolve(row.balance);
-            }
-        });
-    });
 }
 
 // Función para actualizar balance de usuario
@@ -2900,20 +2562,7 @@ setInterval(sendUpdates, 1000 / config.networkUpdateFactor);
 // Don't touch, IP configurations.
 var ipaddress = process.env.OPENSHIFT_NODEJS_IP || process.env.IP || config.host;
 var serverport = process.env.OPENSHIFT_NODEJS_PORT || process.env.PORT || config.port;
-http.listen(serverport, ipaddress, async () => {
-    console.log('[DEBUG] Listening on ' + ipaddress + ':' + serverport);
-    
-    // Cargar estadísticas globales desde la base de datos
-    try {
-        await loadGlobalStatsFromDB();
-    } catch (error) {
-        console.error('[GLOBAL_STATS] Error cargando estadísticas iniciales:', error);
-    }
-    
-    // Iniciar el sistema de estadísticas en tiempo real
-    startStatsUpdate();
-    console.log('[STATS] Sistema de estadísticas en tiempo real iniciado');
-});
+http.listen(serverport, ipaddress, () => console.log('[DEBUG] Listening on ' + ipaddress + ':' + serverport));
 
 // Endpoint para mostrar la página de pagos pendientes
 app.get('/my-payments', (req, res) => {
@@ -3311,344 +2960,5 @@ app.post('/api/update-payment-status', async (req, res) => {
     } catch (error) {
         console.error('[NOWPAYMENTS] Error en update-payment-status:', error);
         res.status(500).json({ error: 'Error interno del servidor' });
-    }
-});
-
-// ===== IMPLEMENTACIÓN DE RETIROS CON NOWPAYMENTS =====
-
-// Endpoint para obtener el mínimo de retiro
-app.get('/api/withdrawal-minimum', async (req, res) => {
-    try {
-        if (!req.user) {
-            return res.status(401).json({ error: 'Usuario no autenticado' });
-        }
-
-        const { crypto } = req.query;
-        if (!crypto) {
-            return res.status(400).json({ error: 'Criptomoneda requerida' });
-        }
-
-        console.log(`[WITHDRAWAL] Obteniendo mínimo de retiro para ${req.user.username}: ${crypto.toUpperCase()}`);
-
-        // Configuración de NOWPayments
-        const NOWPAYMENTS_API_KEY = process.env.NOWPAYMENTS_API_KEY;
-        const NOWPAYMENTS_API_URL = 'https://api.nowpayments.io/v1';
-
-        // Obtener el mínimo de retiro para la criptomoneda
-        const minResponse = await fetch(`${NOWPAYMENTS_API_URL}/min-amount/${crypto}`, {
-            method: 'GET',
-            headers: {
-                'x-api-key': NOWPAYMENTS_API_KEY
-            }
-        });
-
-        const minData = await minResponse.json();
-
-        if (!minResponse.ok) {
-            console.error('[WITHDRAWAL] Error obteniendo mínimo:', minData);
-            return res.status(500).json({ error: 'Error obteniendo mínimo de retiro' });
-        }
-
-        console.log('[WITHDRAWAL] Mínimo de retiro:', minData);
-        res.json(minData);
-
-    } catch (error) {
-        console.error('[WITHDRAWAL] Error en withdrawal-minimum:', error);
-        res.status(500).json({ error: 'Error interno del servidor' });
-    }
-});
-
-// Endpoint para crear un retiro
-app.post('/api/create-withdrawal', async (req, res) => {
-    try {
-        if (!req.user) {
-            return res.status(401).json({ error: 'Usuario no autenticado' });
-        }
-
-        const { amount, crypto, wallet_address } = req.body;
-        
-        if (!amount || !crypto || !wallet_address) {
-            return res.status(400).json({ error: 'Monto, criptomoneda y dirección de wallet requeridos' });
-        }
-
-        // Validar que el usuario tenga suficiente balance
-        if (req.user.balance < amount) {
-            return res.status(400).json({ error: 'Balance insuficiente' });
-        }
-
-        // Validar monto mínimo (por ejemplo, $10 USD)
-        if (amount < 10) {
-            return res.status(400).json({ error: 'Monto mínimo de retiro es $10 USD' });
-        }
-
-        console.log(`[WITHDRAWAL] Creando retiro para ${req.user.username}: $${amount} USD -> ${crypto.toUpperCase()}`);
-
-        // Configuración de NOWPayments
-        const NOWPAYMENTS_API_KEY = process.env.NOWPAYMENTS_API_KEY;
-        const NOWPAYMENTS_API_URL = 'https://api.nowpayments.io/v1';
-
-        // Verificar que la API esté disponible
-        const statusResponse = await fetch(`${NOWPAYMENTS_API_URL}/status`, {
-            method: 'GET',
-            headers: {
-                'x-api-key': NOWPAYMENTS_API_KEY
-            }
-        });
-
-        const statusData = await statusResponse.json();
-
-        if (!statusResponse.ok) {
-            console.error('[WITHDRAWAL] Error verificando API:', statusData);
-            return res.status(500).json({ error: 'Error verificando API de NOWPayments' });
-        }
-
-        console.log('[WITHDRAWAL] API Status:', statusData);
-
-        // Obtener estimación del monto en criptomoneda
-        const estimateResponse = await fetch(`${NOWPAYMENTS_API_URL}/estimate?amount=${amount}&currency_from=usd&currency_to=${crypto}`, {
-            method: 'GET',
-            headers: {
-                'x-api-key': NOWPAYMENTS_API_KEY
-            }
-        });
-
-        const estimateData = await estimateResponse.json();
-
-        if (!estimateResponse.ok) {
-            console.error('[WITHDRAWAL] Error obteniendo estimación:', estimateData);
-            return res.status(500).json({ error: 'Error obteniendo estimación' });
-        }
-
-        console.log('[WITHDRAWAL] Estimación recibida:', estimateData);
-
-        const cryptoAmount = estimateData.estimated_amount;
-
-        // Crear el retiro usando la API de NOWPayments
-        const withdrawalData = {
-            amount: cryptoAmount,
-            currency_from: crypto,
-            currency_to: crypto,
-            address: wallet_address,
-            extra_id: req.user.id.toString(), // ID del usuario como referencia
-            ipn_callback_url: `${req.protocol}://${req.get('host')}/api/withdrawal-webhook`
-        };
-
-        console.log('[WITHDRAWAL] Datos del retiro:', withdrawalData);
-
-        const response = await fetch(`${NOWPAYMENTS_API_URL}/payout`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'x-api-key': NOWPAYMENTS_API_KEY
-            },
-            body: JSON.stringify(withdrawalData)
-        });
-
-        const withdrawalResponse = await response.json();
-
-        if (!response.ok) {
-            console.error('[WITHDRAWAL] Error creando retiro:', withdrawalResponse);
-            return res.status(500).json({ error: 'Error creando retiro' });
-        }
-
-        console.log(`[WITHDRAWAL] Retiro creado exitosamente - ID: ${withdrawalResponse.payout_id}`);
-
-        // Generar ID único para el retiro
-        const withdrawalId = `W${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
-        // Guardar el retiro en la base de datos
-        db.run(`INSERT INTO withdrawals (user_id, withdrawal_id, payout_id, amount, crypto_currency, crypto_amount, wallet_address, status, created_at) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?)`, 
-            [req.user.id, withdrawalId, withdrawalResponse.payout_id, amount, crypto, cryptoAmount, wallet_address, new Date().toISOString()], 
-            function(err) {
-                if (err) {
-                    console.error('[WITHDRAWAL] Error guardando retiro en BD:', err);
-                    return res.status(500).json({ error: 'Error guardando retiro' });
-                }
-
-                console.log(`[WITHDRAWAL] Retiro guardado en BD - ID: ${this.lastID}`);
-
-                // Descontar el monto del balance del usuario
-                const newBalance = req.user.balance - amount;
-                
-                db.run(`UPDATE users SET balance = ? WHERE id = ?`, [newBalance, req.user.id], function(err) {
-                    if (err) {
-                        console.error('[WITHDRAWAL] Error actualizando balance:', err);
-                        return res.status(500).json({ error: 'Error actualizando balance' });
-                    }
-
-                    console.log(`[WITHDRAWAL] Balance actualizado para usuario ${req.user.id}: $${newBalance}`);
-
-                    res.json({
-                        success: true,
-                        withdrawal_id: withdrawalId,
-                        payout_id: withdrawalResponse.payout_id,
-                        amount: amount,
-                        crypto_amount: cryptoAmount,
-                        crypto_currency: crypto,
-                        wallet_address: wallet_address,
-                        new_balance: newBalance,
-                        message: 'Retiro creado exitosamente'
-                    });
-                });
-            });
-
-    } catch (error) {
-        console.error('[WITHDRAWAL] Error en create-withdrawal:', error);
-        res.status(500).json({ error: 'Error interno del servidor' });
-    }
-});
-
-// Endpoint para verificar el estado de un retiro
-app.get('/api/withdrawal-status', async (req, res) => {
-    try {
-        if (!req.user) {
-            return res.status(401).json({ error: 'Usuario no autenticado' });
-        }
-
-        const { withdrawal_id } = req.query;
-        if (!withdrawal_id) {
-            return res.status(400).json({ error: 'Withdrawal ID requerido' });
-        }
-
-        console.log(`[WITHDRAWAL] Verificando estado del retiro: ${withdrawal_id}`);
-
-        // Obtener el retiro de la base de datos
-        db.get(`SELECT * FROM withdrawals WHERE withdrawal_id = ? AND user_id = ?`, 
-            [withdrawal_id, req.user.id], 
-            async (err, withdrawal) => {
-                if (err) {
-                    console.error('[WITHDRAWAL] Error obteniendo retiro:', err);
-                    return res.status(500).json({ error: 'Error obteniendo retiro' });
-                }
-
-                if (!withdrawal) {
-                    return res.status(404).json({ error: 'Retiro no encontrado' });
-                }
-
-                console.log('[WITHDRAWAL] Estado del retiro:', withdrawal);
-                res.json({
-                    success: true,
-                    withdrawal: withdrawal
-                });
-            });
-
-    } catch (error) {
-        console.error('[WITHDRAWAL] Error en withdrawal-status:', error);
-        res.status(500).json({ error: 'Error interno del servidor' });
-    }
-});
-
-// Endpoint para obtener estadísticas en tiempo real
-app.get('/api/stats', (req, res) => {
-    try {
-        const stats = getCurrentStats();
-        res.json({
-            success: true,
-            stats: stats
-        });
-    } catch (error) {
-        console.error('[STATS] Error obteniendo estadísticas:', error);
-        res.status(500).json({ error: 'Error obteniendo estadísticas' });
-    }
-});
-
-// Endpoint para obtener el leaderboard
-app.get('/api/leaderboard', async (req, res) => {
-    try {
-        const leaderboard = await getTopLeaderboard();
-        res.json({
-            success: true,
-            leaderboard: leaderboard
-        });
-    } catch (error) {
-        console.error('[LEADERBOARD] Error obteniendo leaderboard:', error);
-        res.status(500).json({ error: 'Error obteniendo leaderboard' });
-    }
-});
-
-// Endpoint para obtener el historial de retiros del usuario
-app.get('/api/user-withdrawals', async (req, res) => {
-    try {
-        if (!req.user) {
-            return res.status(401).json({ error: 'Usuario no autenticado' });
-        }
-
-        console.log(`[WITHDRAWAL] Obteniendo retiros para usuario: ${req.user.username}`);
-
-        db.all(`SELECT * FROM withdrawals WHERE user_id = ? ORDER BY created_at DESC`, 
-            [req.user.id], 
-            (err, withdrawals) => {
-                if (err) {
-                    console.error('[WITHDRAWAL] Error obteniendo retiros:', err);
-                    return res.status(500).json({ error: 'Error obteniendo retiros' });
-                }
-
-                console.log(`[WITHDRAWAL] Retiros encontrados: ${withdrawals.length}`);
-
-                res.json({
-                    success: true,
-                    withdrawals: withdrawals
-                });
-            });
-
-    } catch (error) {
-        console.error('[WITHDRAWAL] Error en user-withdrawals:', error);
-        res.status(500).json({ error: 'Error interno del servidor' });
-    }
-});
-
-// Webhook para recibir notificaciones de retiros de NOWPayments
-app.post('/api/withdrawal-webhook', async (req, res) => {
-    try {
-        const { payout_id, payment_status, pay_address, pay_amount, pay_currency, transaction_hash } = req.body;
-
-        console.log(`[WITHDRAWAL_WEBHOOK] Webhook recibido - Payout ID: ${payout_id}, Status: ${payment_status}`);
-
-        // Buscar el retiro en la base de datos
-        db.get(`SELECT * FROM withdrawals WHERE payout_id = ?`, [payout_id], async (err, withdrawal) => {
-            if (err) {
-                console.error('[WITHDRAWAL_WEBHOOK] Error verificando retiro:', err);
-                return res.status(500).send('Error');
-            }
-
-            if (!withdrawal) {
-                console.error('[WITHDRAWAL_WEBHOOK] Retiro no encontrado en BD:', payout_id);
-                return res.status(404).send('Retiro no encontrado');
-            }
-
-            // Actualizar el estado del retiro
-            let newStatus = 'pending';
-            if (payment_status === 'finished') {
-                newStatus = 'completed';
-            } else if (payment_status === 'failed' || payment_status === 'expired') {
-                newStatus = 'failed';
-            } else if (payment_status === 'confirming') {
-                newStatus = 'processing';
-            }
-
-            db.run(`UPDATE withdrawals SET status = ?, transaction_hash = ?, updated_at = ? WHERE payout_id = ?`, 
-                [newStatus, transaction_hash || null, new Date().toISOString(), payout_id], 
-                function(err) {
-                    if (err) {
-                        console.error('[WITHDRAWAL_WEBHOOK] Error actualizando retiro:', err);
-                        return res.status(500).send('Error');
-                    }
-
-                    if (newStatus === 'completed') {
-                        console.log(`[WITHDRAWAL_WEBHOOK] ✅ Retiro completado exitosamente para usuario ${withdrawal.user_id}`);
-                    } else if (newStatus === 'failed') {
-                        console.log(`[WITHDRAWAL_WEBHOOK] ❌ Retiro fallido para usuario ${withdrawal.user_id}: ${payment_status}`);
-                    } else {
-                        console.log(`[WITHDRAWAL_WEBHOOK] ⏳ Retiro en progreso para usuario ${withdrawal.user_id}: ${payment_status}`);
-                    }
-
-                    res.status(200).send('OK');
-                });
-        });
-
-    } catch (error) {
-        console.error('[WITHDRAWAL_WEBHOOK] Error en webhook:', error);
-        res.status(500).send('Error');
     }
 });
