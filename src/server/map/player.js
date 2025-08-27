@@ -704,7 +704,7 @@ exports.PlayerManager = class {
     getTopPlayers() {
         this.data.sort(function (a, b) { return b.massTotal - a.massTotal; });
         var topPlayers = [];
-        for (var i = 0; i < Math.min(10, this.data.length); i++) {
+        for (var i = 0; i < Math.min(5, this.data.length); i++) {
             topPlayers.push({
                 id: this.data[i].id,
                 name: this.data[i].name

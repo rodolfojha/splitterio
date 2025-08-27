@@ -170,17 +170,17 @@ function updatePlayerLeaderboard(userId, username, gameResult) {
     });
 }
 
-// Función para obtener el top 10 del leaderboard
+// Función para obtener el top 5 del leaderboard
 function getTopLeaderboard() {
     return new Promise((resolve, reject) => {
         db.all(`SELECT username, total_winnings, total_games_played, total_games_won, 
                        total_games_lost, total_games_tied, biggest_win, win_rate 
                 FROM player_leaderboard 
                 ORDER BY total_winnings DESC 
-                LIMIT 10`, 
+                LIMIT 5`, 
                 (err, rows) => {
                     if (err) {
-                        console.error('[LEADERBOARD] Error obteniendo top 10:', err);
+                        console.error('[LEADERBOARD] Error obteniendo top 5:', err);
                         reject(err);
                     } else {
                         resolve(rows);

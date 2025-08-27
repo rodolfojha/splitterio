@@ -108,12 +108,10 @@ function updateLeaderboardDisplay(leaderboard) {
                     <span class="text-lg font-bold ${position <= 3 ? 'text-yellow-400' : 'text-gray-300'}">${medal}</span>
                     <div>
                         <p class="font-semibold text-white">${player.username}</p>
-                        <p class="text-xs text-gray-400">${player.total_games_played} partidas • ${player.win_rate.toFixed(1)}% win rate</p>
                     </div>
                 </div>
                 <div class="text-right">
                     <p class="font-bold text-green-400">$${parseFloat(player.total_winnings).toLocaleString()}</p>
-                    <p class="text-xs text-gray-400">Mejor: $${parseFloat(player.biggest_win).toLocaleString()}</p>
                 </div>
             </div>
         `;
@@ -1059,7 +1057,8 @@ function handleDisconnect() {
                     finalMass: global.player ? global.player.massTotal : 0,
                     duration: gameDuration,
                     winnings: data.returned,
-                    balance: data.newBalance
+                    balance: data.newBalance,
+                    wasEaten: false // Explícitamente marcar que NO fue comido
                 });
             } else {
                 console.error('[CASHOUT] Error en la API:', data.error);
