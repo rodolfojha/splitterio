@@ -227,7 +227,7 @@ function hideBetOptions() {
     global.betAmount = 0;
 }
 
-// Funcin para procesar apuesta
+// Función para procesar apuesta
 function processBet(betAmount) {
     console.log(`[BET] Procesando apuesta de $${betAmount}`);
     
@@ -304,6 +304,8 @@ function startGameWithBet(betAmount) {
     if (!global.animLoopHandle)
         animloop();
     
+    // Marcar que es un respawn antes de enviarlo
+    global.isRespawn = true;
     // Enviar respawn para iniciar el juego
     socket.emit('respawn');
     
@@ -380,7 +382,7 @@ function showLoginModal() {
     const loginEmail = document.getElementById('loginEmail');
     
     if (loginModal) {
-        loginModal.style.display = 'flex';
+        loginModal.style.display = 'block';
         console.log('Modal de login mostrado');
     } else {
         console.error('No se encontr el modal de login');
@@ -505,6 +507,11 @@ function checkAuthStatus() {
     })
     .then(response => {
         console.log('[DEBUG] Respuesta de /api/auth/status - status:', response.status);
+        try{ 
+            hideLoader(); 
+        } catch (e){
+            //No hacer nada
+        };
         return response.json();
     })
     .then(data => {
@@ -512,6 +519,12 @@ function checkAuthStatus() {
         
         if (data.authenticated && data.user) {
             // Usuario autenticado con Google
+            try{ 
+                hideLoader(); 
+            } catch (e){
+                //No hacer nada
+            };
+
             console.log('[AUTH] Usuario autenticado con Google:', data.user);
             currentUser = data.user;
             sessionToken = null; // No hay token para sesiones de Google
@@ -578,6 +591,11 @@ function checkAuthStatus() {
         }
     })
     .catch(error => {
+        try{ 
+            hideLoader(); 
+        } catch (e){
+            //No hacer nada
+        };
         console.error('Error verificando estado de autenticación:', error);
         // Fallback a verificación de localStorage
         var savedUserData = localStorage.getItem('userData');
@@ -672,20 +690,49 @@ function setupAuthEventListeners() {
         console.log('Botón de logout configurado');
     }
 
+    const historyBtn = document.getElementById('historyBtn');
+    if (historyBtn) {
+        historyBtn.onclick = function() {
+            window.location.href = '/history.html';
+        };
+        console.log('Botón de Add Funds configurado');
+    }
+
     // Configurar botón Add Funds
     const addFundsBtn = document.getElementById('addFundsBtn');
     if (addFundsBtn) {
         addFundsBtn.onclick = function() {
-            window.location.href = '/add-funds.html';
+	    if(currentUser){
+                window.location.href = '/add-funds.html';
+            }else {
+	        showLoginModal();
+	    }
         };
         console.log('Botón de Add Funds configurado');
     }
     
+    // Configurar botón Cash out
+    const cashOutWalletBtn = document.getElementById('cashOutWalletBtn');
+    if (cashOutWalletBtn) {
+        cashOutWalletBtn.onclick = function() {
+            if(currentUser){
+                window.location.href = '/withdrawals.html';
+            }else { 
+                showLoginModal();
+            }
+        };
+        console.log('Botón de My Payments configurado');
+    }
+
     // Configurar botón My Payments
     const myPaymentsBtn = document.getElementById('myPaymentsBtn');
     if (myPaymentsBtn) {
         myPaymentsBtn.onclick = function() {
-            window.location.href = '/my-payments.html';
+            if(currentUser){
+                window.location.href = '/my-payments.html';
+            }else { 
+                showLoginModal();
+            }
         };
         console.log('Botón de My Payments configurado');
     }
@@ -823,13 +870,14 @@ window.onload = function () {
         };
     }
 
+    //TODO revisar
     if (btn) {
         btn.onclick = function () {
             // Solo usuarios autenticados pueden jugar
             if (currentUser) {
                 if (nickErrorText) nickErrorText.style.opacity = 0;
                 // Mostrar opciones de apuesta antes de iniciar el juego
-                showBetOptions();
+                //showBetOptions();
             } else {
                 // Mostrar modal de login en lugar de alert
                 showLoginModal();
@@ -857,7 +905,7 @@ window.onload = function () {
             if (currentUser) {
                 nickErrorText.style.opacity = 0;
                 // Mostrar opciones de apuesta antes de iniciar el juego
-                showBetOptions();
+                // showBetOptions();
             } else {
                 // Mostrar modal de login en lugar de alert
                 showLoginModal();
@@ -1026,12 +1074,12 @@ function handleDisconnect() {
         }
         // Para usuarios de Google OAuth, usamos cookies de sesión (no necesitamos Authorization header)
 
-        // Notificar al servidor que es una desconexión voluntaria
+        // Notificar al servidor que es una desconexión voluntaria //TODO
         if (socket) {
             socket.emit('voluntaryDisconnect');
         }
         
-        // Llamar a la API de cashout
+        // Llamar a la API de cashout //TODO aqui solo pasar el id de usuario no el betAmount puesto que sino puede modificarse o alterarse
         fetch('/api/voluntaryDisconnect', {
             method: 'POST',
             headers: headers,
@@ -1039,7 +1087,8 @@ function handleDisconnect() {
                 betAmount: global.betAmount,
                 originalBetAmount: originalBet,
                 maxMass: global.player ? global.player.massTotal : 0,
-                duration: gameDuration
+                duration: gameDuration,
+                userId: currentUser.id
             }),
             credentials: 'include' // Incluir cookies para sesiones de Google OAuth
         })
@@ -1160,6 +1209,9 @@ function setupSocket(socket) {
         global.player = player;
         window.chat.player = player;
         
+        // Marcar que ya recibimos welcome para evitar enviar gotit de nuevo
+        global.welcomeReceived = true;
+        
         // Obtener la skin seleccionada
         let selectedSkinData = null;
         if (window.getSelectedSkinData) {
@@ -1169,51 +1221,59 @@ function setupSocket(socket) {
             console.log(`[SKIN_CONNECTION] Función getSelectedSkinData no disponible`);
         }
         
-        // Si hay una apuesta activa, enviar los datos del jugador con la apuesta
-        if (global.betAmount && global.betAmount > 0) {
-            const playerData = {
-                name: currentUser.username,
-                userId: currentUser.id,
-                betAmount: global.betAmount
-            };
+        // Solo enviar gotit si es un respawn (no la conexión inicial)
+        // La conexión inicial ya envió gotit antes de recibir welcome
+        if (global.welcomeReceived && global.isRespawn) {
+            console.log('[WELCOME] Respawn detectado, enviando gotit...');
             
-            // Agregar información de la skin si está disponible
-            if (selectedSkinData) {
-                playerData.skinId = selectedSkinData.skinId;
-                playerData.skinName = selectedSkinData.skinName;
-                playerData.skinHue = selectedSkinData.skinHue;
-                console.log(`[SKIN_CONNECTION] Enviando datos de skin al servidor (con apuesta):`, {
-                    skinId: selectedSkinData.skinId,
-                    skinName: selectedSkinData.skinName,
-                    skinHue: selectedSkinData.skinHue
-                });
+            // Si hay una apuesta activa, enviar los datos del jugador con la apuesta
+            if (global.betAmount && global.betAmount > 0) {
+                const playerData = {
+                    name: currentUser.username,
+                    userId: currentUser.id,
+                    betAmount: global.betAmount
+                };
+                
+                // Agregar información de la skin si está disponible
+                if (selectedSkinData) {
+                    playerData.skinId = selectedSkinData.skinId;
+                    playerData.skinName = selectedSkinData.skinName;
+                    playerData.skinHue = selectedSkinData.skinHue;
+                    console.log(`[SKIN_CONNECTION] Enviando datos de skin al servidor (con apuesta):`, {
+                        skinId: selectedSkinData.skinId,
+                        skinName: selectedSkinData.skinName,
+                        skinHue: selectedSkinData.skinHue
+                    });
+                } else {
+                    console.log(`[SKIN_CONNECTION] No hay datos de skin para enviar (con apuesta)`);
+                }
+                
+                socket.emit('gotit', playerData);
             } else {
-                console.log(`[SKIN_CONNECTION] No hay datos de skin para enviar (con apuesta)`);
+                const playerData = {
+                    name: player.name,
+                    screenWidth: player.screenWidth,
+                    screenHeight: player.screenHeight
+                };
+                
+                // Agregar información de la skin si está disponible
+                if (selectedSkinData) {
+                    playerData.skinId = selectedSkinData.skinId;
+                    playerData.skinName = selectedSkinData.skinName;
+                    playerData.skinHue = selectedSkinData.skinHue;
+                    console.log(`[SKIN_CONNECTION] Enviando datos de skin al servidor (sin apuesta):`, {
+                        skinId: selectedSkinData.skinId,
+                        skinName: selectedSkinData.skinName,
+                        skinHue: selectedSkinData.skinHue
+                    });
+                } else {
+                    console.log(`[SKIN_CONNECTION] No hay datos de skin para enviar (sin apuesta)`);
+                }
+                
+                socket.emit('gotit', playerData);
             }
-            
-            socket.emit('gotit', playerData);
         } else {
-            const playerData = {
-                name: player.name,
-                screenWidth: player.screenWidth,
-                screenHeight: player.screenHeight
-            };
-            
-            // Agregar información de la skin si está disponible
-            if (selectedSkinData) {
-                playerData.skinId = selectedSkinData.skinId;
-                playerData.skinName = selectedSkinData.skinName;
-                playerData.skinHue = selectedSkinData.skinHue;
-                console.log(`[SKIN_CONNECTION] Enviando datos de skin al servidor (sin apuesta):`, {
-                    skinId: selectedSkinData.skinId,
-                    skinName: selectedSkinData.skinName,
-                    skinHue: selectedSkinData.skinHue
-                });
-            } else {
-                console.log(`[SKIN_CONNECTION] No hay datos de skin para enviar (sin apuesta)`);
-            }
-            
-            socket.emit('gotit', playerData);
+            console.log('[WELCOME] Conexión inicial, no enviando gotit de nuevo');
         }
         
         global.gameStart = Date.now();
@@ -1291,6 +1351,17 @@ function setupSocket(socket) {
         
         // Mostrar notificación visual temporal
         showCombatNotification(data.message);
+    });
+
+    // Handle cell lost notification
+    socket.on('cellLost', (data) => {
+        console.log('[CELL_LOST] Célula perdida:', data);
+        
+        // Mostrar notificación en el chat
+        window.chat.addSystemLine('{WARNING} <b>' + data.message + '</b>');
+        
+        // Mostrar notificación visual temporal de advertencia
+        showCellLostNotification(data.message, data.remainingCells);
     });
 
     // Handle player skin change notification
@@ -1418,6 +1489,10 @@ function setupSocket(socket) {
 
     // Handle movement.
     socket.on('serverTellPlayerMove', function (playerData, userData, foodsList, massList, virusList, powerFoodList, bombList) {
+        // Debug: Log siempre para diagnosticar
+        console.log('[SOCKET_DEBUG] serverTellPlayerMove received');
+        console.log('[SOCKET_DEBUG] bombList type:', typeof bombList);
+        console.log('[SOCKET_DEBUG] bombList length:', bombList ? bombList.length : 'undefined');
         if (global.playerType == 'player') {
             player.x = playerData.x;
             player.y = playerData.y;
@@ -1572,16 +1647,17 @@ function setupSocket(socket) {
                 headers['Authorization'] = 'Bearer ' + sessionToken;
             }
             
-            // Llamar a la API para registrar la partida
+            // Llamar a la API para registrar la partida //TODO lo suyo esto no debería ni de estar puesto que sino no tiene sentido puede alterarse quitar en VOLUNTARYDISCONNECT DATOS(ESOS LOS GUARDA EL SERVIDOR)
             fetch('/api/voluntaryDisconnect', {
                 method: 'POST',
                 headers: headers,
                 body: JSON.stringify({ 
-                    betAmount: finalMoney, // Usar el dinero final (puede ser 0 si fue comido)
-                    originalBetAmount: originalBet,
-                    maxMass: global.player ? global.player.massTotal : 0,
-                    duration: gameDuration,
-                    disconnectReason: 'eaten' // Marcar como comido
+                    betAmount: finalMoney, // Usar el dinero final (puede ser 0 si fue comido) QUITAR
+                    originalBetAmount: originalBet, //QUITAR
+                    maxMass: global.player ? global.player.massTotal : 0, //QUITAR
+                    duration: gameDuration, //QUITAR
+                    disconnectReason: 'eaten', // Marcar como comido //QUITAR
+                    userId: currentUser.id
                 }),
                 credentials: 'include'
             })
@@ -1589,7 +1665,7 @@ function setupSocket(socket) {
             .then(data => {
                 if (data.success) {
                     currentUser.balance = data.newBalance;
-                    updateNavAuth();
+                    updateNavAuth(); //TODO recibir datos ahí para hacer el update
                     console.log(`[GAME_OVER] Partida registrada. Devuelto: $${data.returned}, nuevo balance: $${data.newBalance}`);
                 } else {
                     console.error('[GAME_OVER] Error registrando partida:', data.error);
@@ -1681,7 +1757,7 @@ function setupSocket(socket) {
     });
 
     socket.on('forceCashout', function () {
-        window.chat.addSystemLine(' Cash out automtico ejecutado!');
+        window.chat.addSystemLine('Cash out automtico ejecutado!');
         global.voluntaryExit = true;
         handleDisconnect();
     });
@@ -2734,7 +2810,7 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Verificar si tiene suficiente balance
         if (currentUser.balance < amount) {
-            updateBetStatus(` Balance insuficiente. Necesitas $${amount} pero tienes $${currentUser.balance.toFixed(2)}`);
+            updateBetStatus(` Balance insuficiente. Necesitas $${amount} pero tienes $${Number(currentUser.balance || 0).toFixed(2)}`);
             return;
         }
         
@@ -2752,8 +2828,22 @@ document.addEventListener('DOMContentLoaded', function() {
         if (startButton && playButtonText) {
             startButton.disabled = false;
             startButton.classList.remove('bg-gray-500', 'text-gray-300', 'cursor-not-allowed', 'opacity-50');
+            startButton.style.cursor = 'pointer';
         }
         
+        if(amount == 2){
+            startButton.classList.remove("inactive");
+            startButton.classList.add("selected");
+            startButton.style.cursor = 'pointer';
+            startButton.innerHTML = `<i class="fa-solid fa-play"></i><span id="playButtonText" class="ml-2">JOIN GAME</span>`;
+            startButton.disabled = false;
+        }else{
+            startButton.classList.remove("selected");
+            startButton.classList.add("inactive");
+            startButton.style.cursor = 'not-allowed';
+            startButton.innerHTML = `<i class="fa-solid fa-server mr-2"></i> SERVER DOWN`;
+            startButton.disabled = true;
+        }
         console.log(`[BET] Monto seleccionado: $${amount}`);
     }
 
@@ -2933,7 +3023,7 @@ function updateWalletBalance() {
     const walletBalance = document.getElementById('walletBalance');
     
     if (currentUser && navBalance && walletBalance) {
-        const balance = currentUser.balance || 0;
+        const balance = Number(currentUser.balance || 0);
         navBalance.textContent = balance.toFixed(2);
         walletBalance.textContent = balance.toFixed(2);
     }
@@ -2964,13 +3054,13 @@ function updateBetInterface() {
     console.log('[DEBUG] isAuthenticated:', isAuthenticated);
     
     if (isAuthenticated) {
-        updateBetStatus(` Balance: $${currentUser.balance.toFixed(2)} - Selecciona tu apuesta`);
+        updateBetStatus(` Balance: $${Number(currentUser.balance || 0).toFixed(2)} - Selecciona tu apuesta`);
         
         // Habilitar el botón de PLAY
         if (startButton) {
             startButton.disabled = false;
-            startButton.style.opacity = '1';
             startButton.style.cursor = 'pointer';
+            startButton.style.opacity = '1';
         }
         
         // Habilitar/deshabilitar botones segn el balance
@@ -2996,16 +3086,6 @@ function updateBetInterface() {
             startButton.style.opacity = '0.5';
             startButton.style.cursor = 'not-allowed';
         }
-        
-        // Deshabilitar todos los botones de apuesta
-        /*betButtons.forEach(btn => {
-            btn.classList.remove('selected');
-            btn.disabled = true;
-            btn.style.opacity = '0.5';
-        });*/
-        
-        // Actualizar texto del botn PLAY
-        //if (playButtonText) playButtonText.textContent = 'LOGIN TO PLAY';
     }
 }
 
@@ -3161,6 +3241,70 @@ function showCombatNotification(message) {
             }, 500);
         }
     }, 3000);
+}
+
+// Función para mostrar notificación de célula perdida
+function showCellLostNotification(message, remainingCells) {
+    // Crear elemento de notificación
+    const notification = document.createElement('div');
+    notification.id = 'cellLostNotification';
+    notification.style.cssText = `
+        position: fixed;
+        top: 25%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: linear-gradient(135deg, #ffa726 0%, #ff9800 100%);
+        color: white;
+        padding: 12px 20px;
+        border-radius: 10px;
+        font-size: 14px;
+        font-weight: bold;
+        text-align: center;
+        box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        z-index: 10000;
+        animation: cellLostShake 2s ease-in-out;
+        border: 2px solid #ff8f00;
+        max-width: 300px;
+    `;
+    
+    notification.innerHTML = `
+        <div style="margin-bottom: 5px; font-size: 16px;">⚠️</div>
+        <div style="font-size: 13px;">${message}</div>
+        <div style="font-size: 11px; margin-top: 5px; opacity: 0.9;">Células restantes: ${remainingCells}</div>
+    `;
+    
+    // Agregar estilos CSS para la animación si no existen
+    if (!document.getElementById('cellLostStyles')) {
+        const style = document.createElement('style');
+        style.id = 'cellLostStyles';
+        style.textContent = `
+            @keyframes cellLostShake {
+                0% { transform: translate(-50%, -50%) scale(0.9); opacity: 0; }
+                10% { transform: translate(-55%, -50%) scale(1); opacity: 1; }
+                20% { transform: translate(-45%, -50%) scale(1); opacity: 1; }
+                30% { transform: translate(-55%, -50%) scale(1); opacity: 1; }
+                40% { transform: translate(-45%, -50%) scale(1); opacity: 1; }
+                50% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+                100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+            }
+        `;
+        document.head.appendChild(style);
+    }
+    
+    // Agregar notificación al DOM
+    document.body.appendChild(notification);
+    
+    // Remover notificación después de 4 segundos
+    setTimeout(() => {
+        if (notification.parentNode) {
+            notification.style.animation = 'cellLostShake 0.5s ease-in-out reverse';
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.parentNode.removeChild(notification);
+                }
+            }, 500);
+        }
+    }, 4000);
 }
 
 // Sistema de flechas para seguir jugadores

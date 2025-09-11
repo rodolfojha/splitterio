@@ -1,7 +1,8 @@
 const passport = require('passport');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const authConfig = require('../../config/google-auth');
-const authRepository = require('./repositories/auth-repository');
+const AuthRepository = require('./repositories/auth-repository');
+const authRepository = new AuthRepository();
 
 // Serializar usuario para la sesión
 passport.serializeUser((user, done) => {

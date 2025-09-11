@@ -4,14 +4,11 @@
   "description": "A simple Agar.io clone",
   "main": "server/server.js",
   "scripts": {
-    "build": "gulp build",
+    "build": "gulp build && node scripts/obfuscate.js && node scripts/obfuscate-html.js", 
     "start": "gulp run",
     "watch": "gulp watch",
     "test": "gulp test",
-    "bots": "node test-bots.js",
-    "bot-controller": "node bot-controller.js",
-    "simple-bots": "node simple-bots.js",
-    "stable-bots": "node stable-bots.js"
+    "restart": "gulp build && pm2 restart server"
   },
   "repository": {
     "type": "git",
@@ -75,6 +72,7 @@
   },
   "devDependencies": {
     "@types/sat": "^0.0.32",
+    "javascript-obfuscator": "^4.1.1",
     "plugin-error": "^2.0.1"
   }
 }

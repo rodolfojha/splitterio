@@ -298,7 +298,7 @@
                 const totalWinnings = parseFloat(getUrlParameter('winnings')) || 0;
                 const commission = parseFloat(getUrlParameter('commission')) || 0;
                 const finalBalance = parseFloat(getUrlParameter('balance')) || 0;
-                const wasEaten = (initialBet === totalWinnings);
+                const wasEaten = getUrlParameter('wasEaten') === 'true';
 
                 // Actualizar la interfaz
                 document.getElementById('final-mass').textContent = finalMass.toFixed(0);
@@ -309,23 +309,29 @@
 
                 // Actualizar título según el resultado
                 const resultTitle = document.getElementById('resultTitle');
+                console.log('Debug - wasEaten:', wasEaten, 'totalWinnings:', totalWinnings, 'initialBet:', initialBet);
+                
                 if (wasEaten) {
+                    // Jugador fue comido
+                    resultTitle.textContent = 'You Got Eaten!';
+                    document.getElementById("icon").textContent = "💀";
+                    resultTitle.style.color = '#dc3545';
+                } else if (totalWinnings === initialBet) {
+                    // Cashout con el mismo balance (empate)
                     resultTitle.textContent = 'Tie';
                     document.getElementById("icon").textContent = "🫥";
                     resultTitle.style.color = '#6c757d';
                 } else {
+                    // Ganancia
                     resultTitle.textContent = 'Victory!';
+                    document.getElementById("icon").textContent = "🏆";
                     resultTitle.style.color = '#28a745';
                 }
 
-                // Ocultar loading y mostrar resultados
-                document.getElementById('loading').style.display = 'none';
-                document.getElementById('results').style.display = 'block';
+                // Los resultados ya están visibles por defecto
 
             } catch (error) {
                 console.error('Error cargando resultados:', error);
-                document.getElementById('loading').style.display = 'none';
-                document.getElementById('error').style.display = 'block';
             }
         }
 

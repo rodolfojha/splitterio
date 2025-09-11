@@ -154,6 +154,8 @@ class Cell {
         var slowDown = 1;
         if (this.speed <= MIN_SPEED) {
             slowDown = util.mathLog(this.mass, slowBase) - initMassLog + 1;
+            // Asegurar que slowDown nunca sea menor que 1 para evitar que células pequeñas se muevan más rápido
+            slowDown = Math.max(slowDown, 1);
         }
 
         // Aplicar multiplicador de velocidad local y global
@@ -202,6 +204,7 @@ class Cell {
 exports.Player = class {
     constructor(id) {
         this.id = id;
+        this.userId = null;
         this.hue = Math.round(Math.random() * 360);
         this.name = null;
         this.admin = false;
@@ -214,9 +217,10 @@ exports.Player = class {
     }
 
     /* Initalizes things that change with every respawn */
-    init(position, defaultPlayerMass) {
+    init(position, defaultPlayerMass, userId) {
         this.cells = [new Cell(position.x, position.y, defaultPlayerMass, MIN_SPEED)];
         this.massTotal = defaultPlayerMass;
+        this.userId = userId;
         this.x = position.x;
         this.y = position.y;
         this.target = {
@@ -329,9 +333,11 @@ exports.Player = class {
         for (let i = 0; i < 3; i++) {
             const newCell = new Cell(cellToSplit.x, cellToSplit.y, massPerPart, MIN_SPEED);
             newCell.gameMoney = moneyPerCell;
+            // Transferir poderes activos de la célula original
+            newCell.activePowers = JSON.parse(JSON.stringify(cellToSplit.activePowers));
             newCell.activateProtection(15000); // 15 segundos de protección
             this.cells.push(newCell);
-            console.log(`[EATEN_SPLIT] Nueva célula ${this.cells.length - 1} creada con $${newCell.gameMoney} y protección activada`);
+            console.log(`[EATEN_SPLIT] Nueva célula ${this.cells.length - 1} creada con $${newCell.gameMoney}, poderes transferidos y protección activada`);
         }
         
         // Modificar la célula original con el dinero exacto
@@ -409,10 +415,12 @@ exports.Player = class {
                 const newCell = new Cell(cellToSplit.x, cellToSplit.y, newCellsMass, SPLIT_CELL_SPEED);
                 // Asignar dinero exacto sin redondeo
                 newCell.gameMoney = moneyPerCell;
+                // Transferir poderes activos de la célula original
+                newCell.activePowers = JSON.parse(JSON.stringify(cellToSplit.activePowers));
                 // Marcar la nueva célula como dividida
                 newCell.markAsSplit();
                 this.cells.push(newCell);
-                console.log(`[SPLIT] Nueva célula ${this.cells.length - 1} creada con $${newCell.gameMoney} - MARCADA COMO DIVIDIDA`);
+                console.log(`[SPLIT] Nueva célula ${this.cells.length - 1} creada con $${newCell.gameMoney} y poderes transferidos - MARCADA COMO DIVIDIDA`);
             }
             
             // Asignar el dinero exacto a la célula original y marcarla como dividida
@@ -428,10 +436,12 @@ exports.Player = class {
             for (let i = 0; i < piecesToCreate - 1; i++) {
                 const newCell = new Cell(cellToSplit.x, cellToSplit.y, newCellsMass, SPLIT_CELL_SPEED);
                 newCell.gameMoney = 0;
+                // Transferir poderes activos de la célula original
+                newCell.activePowers = JSON.parse(JSON.stringify(cellToSplit.activePowers));
                 // Marcar la nueva célula como dividida (no se puede dividir más)
                 newCell.markAsSplit();
                 this.cells.push(newCell);
-                console.log(`[SPLIT] Nueva célula ${this.cells.length - 1} creada sin dinero - MARCADA COMO DIVIDIDA`);
+                console.log(`[SPLIT] Nueva célula ${this.cells.length - 1} creada sin dinero pero con poderes transferidos - MARCADA COMO DIVIDIDA`);
             }
             // Marcar la célula original como dividida
             cellToSplit.markAsSplit();

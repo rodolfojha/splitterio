@@ -1,16 +1,16 @@
 const db = require("../sql.js");
 
 const logFailedLoginAttempt = async (username, ipAddress) => {
-    return new Promise((resolve) => {
-        db.run(
+    try {
+        const connection = await db.getConnection();
+        await connection.execute(
             "INSERT INTO failed_login_attempts (username, ip_address) VALUES (?, ?)",
-            [username, ipAddress],
-            (err) => {
-                if (err) console.error(err);
-                resolve();
-            }
+            [username, ipAddress]
         );
-    });
+        connection.release();
+    } catch (err) {
+        console.error(err);
+    }
 };
 
 module.exports = {

@@ -111,6 +111,19 @@ module.exports = {
             bombSpeed: 3.0,      // Velocidad de movimiento de las bombas
             bombSize: 20,        // Tamaño de las bombas
             bombColor: "#ff0000" // Color rojo para las bombas
+        },
+        independentBots: {
+            enabled: true,
+            botCount: 8,         // Número de bots independientes en el campo
+            botSpeed: 4.0,       // Velocidad de movimiento de los bots (aumentada)
+            botSize: 25,         // Tamaño inicial de los bots
+            botColor: "#00ff00", // Color verde para los bots
+            initialMass: 20,     // Masa inicial de los bots
+            respawnDelay: 10000, // Delay para respawn de bots eliminados
+            maxBots: 15,         // Máximo número de bots permitidos
+            minBots: 5,          // Mínimo número de bots a mantener
+            growthRate: 1.2,     // Tasa de crecimiento de los bots
+            maxMass: 500         // Masa máxima que pueden alcanzar los bots
         }
     }
 };

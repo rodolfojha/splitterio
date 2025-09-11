@@ -7,12 +7,12 @@ module.exports = {
     session: {
         secret: 'splitta-io-session-secret-key-2024',
         resave: false,
-        saveUninitialized: true,
+        saveUninitialized: false,
         cookie: {
             secure: false, // Temporalmente false para debug
             maxAge: 24 * 60 * 60 * 1000, // 24 horas
             sameSite: 'lax',
-            httpOnly: true
+            httpOnly: false // Cambiar a false para permitir acceso desde JavaScript
         }
     }
 };

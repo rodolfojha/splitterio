@@ -4,6 +4,8 @@
 // Cargar variables de entorno desde .env
 require('dotenv').config();
 
+const tokenStore = require("./tokenStore"); //TOKEN JWT
+
 const express = require('express');
 const session = require('express-session');
 const passport = require('passport');
@@ -15,7 +17,8 @@ const SAT = require('sat');
 const { RedZone } = require('./game-logic');
 const loggingRepositry = require('./repositories/logging-repository');
 const chatRepository = require('./repositories/chat-repository');
-const authRepository = require('./repositories/auth-repository');
+const AuthRepository = require('./repositories/auth-repository');
+const authRepository = new AuthRepository();
 const { BombManager } = require('./map/bomb');
 const config = require('../../config');
 const util = require('./lib/util');
@@ -49,6 +52,7 @@ if (config.globalEvents && config.globalEvents.bombEvent && config.globalEvents.
 let sockets = {};
 let spectators = [];
 let playerUserIds = {}; // Mapeo de socket.id -> userId
+let playersStatsInGame = {}; //TODO BET, ACTUAL MONEY, Y COMO MURIÓ EL JUGADOR. se puede incluir masa y duración si se ve necesario 
 const INIT_MASS_LOG = util.mathLog(config.defaultPlayerMass, config.slowBase);
 
 let leaderboard = [];
@@ -64,7 +68,7 @@ function emitStats() {
     const connectedPlayers = Object.keys(sockets).length;
     const stats = {
         playersOnline: connectedPlayers,
-        globalWinnings: globalWinnings.toFixed(2)
+        globalWinnings: Number(globalWinnings || 0).toFixed(2)
     };
     io.emit('statsUpdate', stats);
 }
@@ -74,139 +78,178 @@ function getCurrentStats() {
     const connectedPlayers = Object.keys(sockets).length;
     return {
         playersOnline: connectedPlayers,
-        globalWinnings: globalWinnings.toFixed(2)
+        globalWinnings: Number(globalWinnings || 0).toFixed(2)
     };
 }
 
+//Refrescar nuevo token
+async function refreshToken() {
+    try {
+        const response = await fetch("https://api.nowpayments.io/v1/auth", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                email: process.env.NOWPAYMENTS_EMAIL,
+                password: process.env.NOWPAYMENTS_PASSWORD
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        console.log("✅ Token recibido:", data.token);
+
+        // Guardamos el token en memoria con expiración de 280 segundos
+        const EXPIRATION_SECONDS = 280;
+        tokenStore.setToken(data.token, EXPIRATION_SECONDS);
+        console.log(`✅ Token renovado y válido por ${EXPIRATION_SECONDS} segundos`);
+
+        return data.token;
+
+    } catch (error) {
+        console.error("❌ Error al renovar token:", error.message);
+        return null;
+    }
+}
+
+
+// Función que siempre devuelve un token válido
+async function getValidToken() {
+    if (!tokenStore.getToken() || tokenStore.isExpired()) {
+        return await refreshToken();
+    }
+    return tokenStore.getToken();
+}
+
 // Función para actualizar estadísticas globales en la base de datos
-function updateGlobalStats(winningsToAdd = 0, betsToAdd = 0, gamesToAdd = 0) {
-    return new Promise((resolve, reject) => {
-        db.run(`UPDATE global_stats SET 
-                total_winnings = total_winnings + ?, 
-                total_bets_placed = total_bets_placed + ?, 
-                total_games_played = total_games_played + ?,
-                last_updated = CURRENT_TIMESTAMP 
-                WHERE id = 1`, 
-                [winningsToAdd, betsToAdd, gamesToAdd], 
-                function(err) {
-                    if (err) {
-                        console.error('[GLOBAL_STATS] Error actualizando estadísticas globales:', err);
-                        reject(err);
-                    } else {
-                        console.log(`[GLOBAL_STATS] Estadísticas globales actualizadas: +$${winningsToAdd} ganancias, +$${betsToAdd} apuestas, +${gamesToAdd} partidas`);
-                        resolve();
-                    }
-                });
-    });
+async function updateGlobalStats(winningsToAdd = 0, betsToAdd = 0, gamesToAdd = 0) {
+    try {
+        const connection = await db.getConnection();
+        await connection.execute(`
+            UPDATE global_stats SET 
+            total_winnings = total_winnings + ?, 
+            total_bets_placed = total_bets_placed + ?, 
+            total_games_played = total_games_played + ?,
+            last_updated = CURRENT_TIMESTAMP 
+            WHERE id = 1
+        `, [winningsToAdd, betsToAdd, gamesToAdd]);
+        connection.release();
+        
+        console.log(`[GLOBAL_STATS] Estadísticas globales actualizadas: +$${winningsToAdd} ganancias, +$${betsToAdd} apuestas, +${gamesToAdd} partidas`);
+    } catch (err) {
+        console.error('[GLOBAL_STATS] Error actualizando estadísticas globales:', err);
+        throw err;
+    }
 }
 
 // Función para actualizar leaderboard de un jugador
-function updatePlayerLeaderboard(userId, username, gameResult) {
-    return new Promise((resolve, reject) => {
+async function updatePlayerLeaderboard(userId, username, gameResult) {
+    try {
+        console.log(`[LEADERBOARD] Actualizando para ${username}:`, gameResult);
+        const connection = await db.getConnection();
+        
         // Primero, verificar si el jugador ya existe en el leaderboard
-        db.get(`SELECT * FROM player_leaderboard WHERE user_id = ?`, [userId], (err, row) => {
-            if (err) {
-                console.error('[LEADERBOARD] Error verificando jugador:', err);
-                reject(err);
-                return;
-            }
+        const [rows] = await connection.execute(`SELECT * FROM player_leaderboard WHERE user_id = ?`, [userId]);
+        
+        if (rows.length > 0) {
+            // Actualizar jugador existente
+            const row = rows[0];
+            const currentWinnings = Number(row.total_winnings) || 0;
+            const currentGames = Number(row.total_games_played) || 0;
+            const currentGamesWon = Number(row.total_games_won) || 0;
+            const currentGamesLost = Number(row.total_games_lost) || 0;
+            const currentGamesTied = Number(row.total_games_tied) || 0;
+            const currentBiggestWin = Number(row.biggest_win) || 0;
+            const currentTotalBets = Number(row.total_bets_placed) || 0;
+            
+            const newTotalWinnings = currentWinnings + (gameResult.winnings || 0);
+            const newTotalGames = currentGames + 1;
+            const newGamesWon = currentGamesWon + (gameResult.resultType === 'win' ? 1 : 0);
+            const newGamesLost = currentGamesLost + (gameResult.resultType === 'loss' ? 1 : 0);
+            const newGamesTied = currentGamesTied + (gameResult.resultType === 'tie' ? 1 : 0);
+            const newBiggestWin = Math.max(currentBiggestWin, gameResult.winnings || 0);
+            const newTotalBets = currentTotalBets + (gameResult.betAmount || 0);
+            const newWinRate = newGamesWon / newTotalGames * 100;
 
-            if (row) {
-                // Actualizar jugador existente
-                const newTotalWinnings = row.total_winnings + (gameResult.winnings || 0);
-                const newTotalGames = row.total_games_played + 1;
-                const newGamesWon = row.total_games_won + (gameResult.resultType === 'win' ? 1 : 0);
-                const newGamesLost = row.total_games_lost + (gameResult.resultType === 'loss' ? 1 : 0);
-                const newGamesTied = row.total_games_tied + (gameResult.resultType === 'tie' ? 1 : 0);
-                const newBiggestWin = Math.max(row.biggest_win, gameResult.winnings || 0);
-                const newTotalBets = row.total_bets_placed + (gameResult.betAmount || 0);
-                const newWinRate = newGamesWon / newTotalGames * 100;
-
-                db.run(`UPDATE player_leaderboard SET 
-                        total_winnings = ?, 
-                        total_games_played = ?,
-                        total_games_won = ?,
-                        total_games_lost = ?,
-                        total_games_tied = ?,
-                        biggest_win = ?,
-                        total_bets_placed = ?,
-                        win_rate = ?,
-                        last_updated = CURRENT_TIMESTAMP 
-                        WHERE user_id = ?`, 
-                        [newTotalWinnings, newTotalGames, newGamesWon, newGamesLost, newGamesTied, 
-                         newBiggestWin, newTotalBets, newWinRate, userId], 
-                        function(err) {
-                            if (err) {
-                                console.error('[LEADERBOARD] Error actualizando jugador:', err);
-                                reject(err);
-                            } else {
-                                console.log(`[LEADERBOARD] Jugador ${username} actualizado: $${newTotalWinnings} total, ${newWinRate.toFixed(1)}% win rate`);
-                                resolve();
-                            }
-                        });
-            } else {
-                // Crear nuevo jugador en el leaderboard
-                const winRate = gameResult.resultType === 'win' ? 100 : 0;
-                db.run(`INSERT INTO player_leaderboard 
-                        (user_id, username, total_winnings, total_games_played, total_games_won, 
-                         total_games_lost, total_games_tied, biggest_win, total_bets_placed, win_rate) 
-                        VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?)`, 
-                        [userId, username, gameResult.winnings || 0, 
-                         gameResult.resultType === 'win' ? 1 : 0,
-                         gameResult.resultType === 'loss' ? 1 : 0,
-                         gameResult.resultType === 'tie' ? 1 : 0,
-                         gameResult.winnings || 0, gameResult.betAmount || 0, winRate], 
-                        function(err) {
-                            if (err) {
-                                console.error('[LEADERBOARD] Error creando jugador:', err);
-                                reject(err);
-                            } else {
-                                console.log(`[LEADERBOARD] Nuevo jugador ${username} agregado al leaderboard`);
-                                resolve();
-                            }
-                        });
-            }
-        });
-    });
+            await connection.execute(`UPDATE player_leaderboard SET 
+                    total_winnings = ?, 
+                    total_games_played = ?,
+                    total_games_won = ?,
+                    total_games_lost = ?,
+                    total_games_tied = ?,
+                    biggest_win = ?,
+                    total_bets_placed = ?,
+                    win_rate = ?,
+                    last_updated = CURRENT_TIMESTAMP 
+                    WHERE user_id = ?`, 
+                    [newTotalWinnings, newTotalGames, newGamesWon, newGamesLost, newGamesTied, 
+                     newBiggestWin, newTotalBets, newWinRate, userId]);
+            
+            console.log(`[LEADERBOARD] Jugador ${username} actualizado: $${newTotalWinnings} total (antes: $${currentWinnings}, ganancia: $${gameResult.winnings || 0}), ${newWinRate.toFixed(1)}% win rate`);
+        } else {
+            // Crear nuevo jugador en el leaderboard
+            const winRate = gameResult.resultType === 'win' ? 100 : 0;
+            await connection.execute(`INSERT INTO player_leaderboard 
+                    (user_id, username, total_winnings, total_games_played, total_games_won, 
+                     total_games_lost, total_games_tied, biggest_win, total_bets_placed, win_rate) 
+                    VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?)`, 
+                    [userId, username, gameResult.winnings || 0, 
+                     gameResult.resultType === 'win' ? 1 : 0,
+                     gameResult.resultType === 'loss' ? 1 : 0,
+                     gameResult.resultType === 'tie' ? 1 : 0,
+                     gameResult.winnings || 0, gameResult.betAmount || 0, winRate]);
+            
+            console.log(`[LEADERBOARD] Nuevo jugador ${username} agregado al leaderboard con $${gameResult.winnings || 0} ganancias`);
+        }
+        
+        connection.release();
+    } catch (err) {
+        console.error('[LEADERBOARD] Error actualizando leaderboard:', err);
+        throw err;
+    }
 }
 
 // Función para obtener el top 5 del leaderboard
-function getTopLeaderboard() {
-    return new Promise((resolve, reject) => {
-        db.all(`SELECT username, total_winnings, total_games_played, total_games_won, 
-                       total_games_lost, total_games_tied, biggest_win, win_rate 
-                FROM player_leaderboard 
-                ORDER BY total_winnings DESC 
-                LIMIT 5`, 
-                (err, rows) => {
-                    if (err) {
-                        console.error('[LEADERBOARD] Error obteniendo top 5:', err);
-                        reject(err);
-                    } else {
-                        resolve(rows);
-                    }
-                });
-    });
+async function getTopLeaderboard() {
+    try {
+        const connection = await db.getConnection();
+        const [rows] = await connection.execute(`
+            SELECT username, total_winnings, total_games_played, total_games_won, 
+                   total_games_lost, total_games_tied, biggest_win, win_rate 
+            FROM player_leaderboard 
+            ORDER BY total_winnings DESC 
+            LIMIT 5
+        `);
+        connection.release();
+        return rows;
+    } catch (err) {
+        console.error('[LEADERBOARD] Error obteniendo top 5:', err);
+        throw err;
+    }
 }
 
 // Función para cargar estadísticas globales desde la base de datos
-function loadGlobalStatsFromDB() {
-    return new Promise((resolve, reject) => {
-        db.get(`SELECT total_winnings, total_bets_placed, total_games_played FROM global_stats WHERE id = 1`, (err, row) => {
-            if (err) {
-                console.error('[GLOBAL_STATS] Error cargando estadísticas:', err);
-                reject(err);
-            } else if (row) {
-                globalWinnings = row.total_winnings;
-                totalBetsPlaced = row.total_bets_placed;
-                console.log(`[GLOBAL_STATS] Estadísticas cargadas: $${globalWinnings} ganancias, $${totalBetsPlaced} apuestas, ${row.total_games_played} partidas`);
-                resolve();
-            } else {
-                console.log('[GLOBAL_STATS] No se encontraron estadísticas, usando valores por defecto');
-                resolve();
-            }
-        });
-    });
+async function loadGlobalStatsFromDB() {
+    try {
+        const connection = await db.getConnection();
+        const [rows] = await connection.execute(`SELECT total_winnings, total_bets_placed, total_games_played FROM global_stats WHERE id = 1`);
+        connection.release();
+        
+        if (rows.length > 0) {
+            const row = rows[0];
+            globalWinnings = Number(row.total_winnings) || 0;
+            totalBetsPlaced = Number(row.total_bets_placed) || 0;
+            console.log(`[GLOBAL_STATS] Estadísticas cargadas: $${globalWinnings} ganancias, $${totalBetsPlaced} apuestas, ${row.total_games_played} partidas`);
+        } else {
+            console.log('[GLOBAL_STATS] No se encontraron estadísticas, usando valores por defecto');
+        }
+    } catch (err) {
+        console.error('[GLOBAL_STATS] Error cargando estadísticas:', err);
+    }
 }
 
 // Iniciar el intervalo de actualización de estadísticas
@@ -317,6 +360,57 @@ app.get('/api/balance', async (req, res) => {
     }
 });
 
+// Endpoint para crear custody para usuarios existentes
+app.post('/api/create-custody', async (req, res) => {
+    try {
+        console.log('[CUSTODY] Solicitud de creación de custody recibida');
+
+	const token = await getValidToken();
+
+        // Verificar autenticación
+        let user = null;
+        if (req.isAuthenticated()) {
+            user = req.user;
+        } else {
+            const sessionToken = req.headers.authorization?.replace('Bearer ', '');
+            if (!sessionToken) {
+                return res.status(401).json({ error: 'Usuario no autenticado' });
+            }
+            user = await authRepository.verifySession(sessionToken);
+        }
+
+        console.log(`[CUSTODY] Creando custody para usuario: ${user.username} (ID: ${user.id})`);
+
+        // Verificar si ya tiene custody ID
+        if (user.nowpayments_custody_id) {
+            return res.json({
+                success: true,
+                message: 'Usuario ya tiene custody ID',
+                custodyId: user.nowpayments_custody_id
+            });
+        }
+
+        // Crear custody
+        const custodyId = await authRepository.createCustodyForExistingUser(user.id);
+        
+        console.log(`[CUSTODY] Custody creado exitosamente para usuario ${user.id}: ${custodyId}`);
+        
+        res.json({
+            success: true,
+            message: 'Custody creado exitosamente',
+            custodyId: custodyId
+        });
+
+    } catch (error) {
+        console.error('[CUSTODY] Error creando custody:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Error interno del servidor',
+            message: error.message
+        });
+    }
+});
+
 // Ruta para hacer una apuesta
 app.post('/api/bet', async (req, res) => {
     try {
@@ -339,8 +433,11 @@ app.post('/api/bet', async (req, res) => {
             console.log('[BET] Usuario tradicional:', user.username, 'Balance:', user.balance);
         }
         
-        if (!betAmount || ![1, 2, 4].includes(betAmount)) {
-            return res.status(400).json({ error: 'Apuesta debe ser $1, $2 o $4' });
+        if (!betAmount || ![2, 5, 20].includes(betAmount)) {
+            return res.status(400).json({ error: 'Apuesta debe ser $2, $5 o $20' });
+        }
+        if(![2].includes(betAmount)){
+            return res.status(400).json({ error: 'Actualmente ese servidor no está disponible' });
         }
         
         console.log('[BET] Procesando apuesta de $', betAmount, 'para usuario:', user.username);
@@ -567,382 +664,6 @@ app.post('/api/growth-config', (req, res) => {
 
 // Ruta para desconexión voluntaria con penalización
 
-// Endpoint para mostrar la página de Add Funds
-app.get('/add-funds', (req, res) => {
-    if (!req.user) {
-        return res.redirect('/?error=login_required');
-    }
-    
-    // Servir una página con selección de criptomonedas
-    res.send(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>Add Funds - Splitta.io</title>
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <script src="https://cdn.tailwindcss.com"></script>
-            <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-        </head>
-        <body class="bg-gray-900 text-gray-100 min-h-screen flex items-center justify-center">
-          <div class="bg-gray-800 rounded-2xl shadow-2xl p-8 max-w-4xl w-full mx-4 flex flex-col md:flex-row gap-6">
-            
-            <!-- Sección principal (formulario) -->
-            <div class="flex-1">
-              <h1 class="text-3xl font-bold text-center mb-8">💰 Add Funds</h1>
-
-              <form id="paymentForm" class="space-y-6">
-                <div>
-                  <label class="block text-sm font-medium mb-2 text-gray-300" id="amountLabel">Amount (USD)</label>
-                  <input type="number" id="amount" min="10" step="0.01" value="10"
-                    class="w-full p-4 bg-gray-700 border border-gray-600 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-100 placeholder-gray-400 transition">
-                </div>
-
-                <div>
-                  <label class="block text-sm font-medium mb-2 text-gray-300">Select Cryptocurrency</label>
-                  <select id="cryptoSelect"
-                    class="w-full p-4 bg-gray-700 border border-gray-600 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-100">
-                    <option value="">Loading cryptocurrencies...</option>
-                  </select>
-                </div>
-
-                <div id="estimateInfo" class="hidden p-4 bg-gray-700 border border-gray-600 rounded-xl">
-                  <div class="text-sm text-gray-200 space-y-1">
-                    <div class="flex justify-between">
-                      <span>You'll receive:</span>
-                      <span id="estimatedAmount" class="font-medium text-blue-400">0.0000</span>
-                    </div>
-                    <div class="flex justify-between text-gray-400">
-                      <span>Rate:</span>
-                      <span id="exchangeRate">1 USD = 0.0000</span>
-                    </div>
-                  </div>
-                </div>
-
-                <button type="submit" id="submitBtn"
-                  class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-4 rounded-xl shadow-md hover:shadow-lg transition">
-                  Process Payment
-                </button>
-              </form>
-
-              <a href="/" class="block text-center mt-6 text-blue-400 hover:text-blue-300 hover:underline transition">
-                ← Back to Game
-              </a>
-            </div>
-
-            <!-- Sección de Payment Info (ahora a la derecha en desktop) -->
-            <div id="paymentDetails"
-              class="hidden flex-1 p-5 bg-gray-800 border border-gray-700 rounded-xl self-start md:self-auto">
-              <h3 class="text-lg font-semibold mb-3 text-gray-100 flex items-center gap-2">
-                <svg class="w-5 h-5 text-green-400" fill="none" stroke="currentColor" stroke-width="2"
-                  viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                Payment Details
-              </h3>
-              <div id="paymentInfo" class="text-gray-300 text-sm leading-relaxed"></div>
-              <div id="qrCode" class="mt-6 flex flex-col items-center gap-3 p-5 rounded-2xl bg-gray-700/50 border border-gray-600 shadow-inner transition"></div>
-            </div>
-          </div>
-
-            
-            <script>
-                let selectedCrypto = 'btc';
-                let availableCurrencies = [];
-                
-                // Cargar monedas disponibles al cargar la página
-                async function loadCurrencies() {
-                    try {
-                        const response = await fetch('/api/currencies', {
-                            method: 'GET',
-                            credentials: 'include'
-                        });
-                        
-                        const data = await response.json();
-                        
-                        if (data.success) {
-                            availableCurrencies = data.currencies;
-                            renderCryptoOptions();
-                        }
-                    } catch (error) {
-                        console.error('Error loading currencies:', error);
-                    }
-                }
-                
-                // Renderizar opciones de criptomonedas
-                function renderCryptoOptions() {
-                    const select = document.getElementById('cryptoSelect');
-                    
-                    // Limpiar opciones existentes
-                    select.innerHTML = '';
-                    
-                    // Agregar opción por defecto
-                    const defaultOption = document.createElement('option');
-                    defaultOption.value = '';
-                    defaultOption.textContent = 'Select a cryptocurrency...';
-                    select.appendChild(defaultOption);
-                    
-                    // Ordenar monedas: populares primero, luego alfabéticamente
-                    const popularCurrencies = ['usdtmatic', 'btc', 'eth', 'usdtsol', 'usdtpol', 'usdttrc20', 'usdterc20', 'doge', 'ltc', 'bnb', 'ada', 'xrp'];
-                    const sortedCurrencies = [];
-                    
-                    // Agregar monedas populares primero
-                    popularCurrencies.forEach(crypto => {
-                        if (availableCurrencies.includes(crypto)) {
-                            sortedCurrencies.push(crypto);
-                        }
-                    });
-                    
-                    // Agregar el resto de monedas alfabéticamente
-                    availableCurrencies.forEach(crypto => {
-                        if (!sortedCurrencies.includes(crypto)) {
-                            sortedCurrencies.push(crypto);
-                        }
-                    });
-                    
-                    // Crear opciones para el selector
-                    sortedCurrencies.forEach(crypto => {
-                        const option = document.createElement('option');
-                        option.value = crypto;
-                        
-                        // Nombres amigables para monedas populares
-                        const friendlyNames = {
-                            'usdtmatic': '💎 Tether Polygon (USDTMATIC) - Min $1',
-                            'btc': '₿ Bitcoin (BTC)',
-                            'eth': 'Ξ Ethereum (ETH)',
-                            'usdtsol': '💎 Tether Solana (USDTSOL) - Min $1',
-                            'usdtpol': '💎 Tether Polygon (USDTPOL) - Min $1',
-                            'usdttrc20': '💎 Tether TRC20 (USDTTRC20) - Min $5',
-                            'usdterc20': '💎 Tether ERC20 (USDTERC20) - Min $5',
-                            'doge': '🐕 Dogecoin (DOGE)',
-                            'ltc': 'Ł Litecoin (LTC)',
-                            'bnb': '🟡 BNB (BNB)',
-                            'ada': '🔷 Cardano (ADA)',
-                            'xrp': '💎 Ripple (XRP)'
-                        };
-                        
-                                                 option.textContent = friendlyNames[crypto] || \`\${crypto.toUpperCase()}\`;
-                         select.appendChild(option);
-                     });
-                     
-                     // Seleccionar USDTMATIC por defecto
-                     select.value = 'usdtmatic';
-                     selectedCrypto = 'usdtmatic';
-                     updateInterfaceForCrypto();
-                 }
-                
-                // Función para actualizar la interfaz según la criptomoneda seleccionada
-                function updateInterfaceForCrypto() {
-                    const amountLabel = document.getElementById('amountLabel');
-                    const amountInput = document.getElementById('amount');
-                    const estimateInfo = document.getElementById('estimateInfo');
-
-		            amountLabel.textContent = 'Amount (USDT)';
-
-		            const c = selectedCrypto;
-
-                    if (selectedCrypto === 'usdtmatic') {
-                        amountInput.min = 2;
-                        amountInput.value = 2;
-//                        estimateInfo.classList.add('hidden');
-	                } else if ((c.includes("usdt") || c.includes("usdc") || c.includes("fdusd")) && (c.includes("bsc") || c.includes("sol"))) {
-                        amountInput.min = 5;
-                        amountInput.value = 5;
-                    } else {
-                        amountInput.min = 15;
-                        amountInput.value = 15;
-                        updateEstimate();
-                    }
-		            updateEstimate();
-                }
-                
-                // Actualizar estimación cuando cambie el monto
-                document.getElementById('amount').addEventListener('input', updateEstimate);
-                
-                // Actualizar cuando cambie la criptomoneda seleccionada
-                document.getElementById('cryptoSelect').addEventListener('change', function() {
-                    selectedCrypto = this.value;
-                    updateInterfaceForCrypto();
-                });
-                
-                async function updateEstimate() {
-                    const amount = document.getElementById('amount').value;
-                    if (!amount || amount < 10) return;
-                    
-                    // No hacer estimación para USDT
-//                    if (selectedCrypto === 'usdtmatic' || selectedCrypto === 'usdtsol' || selectedCrypto === 'usdtpol' || selectedCrypto === 'usdttrc20' || selectedCrypto === 'usdterc20') return;
-                    
-                    try {
-                        const response = await fetch(\`/api/estimate?amount=\${amount}&crypto=\${selectedCrypto}\`, {
-                            method: 'GET',
-                            credentials: 'include'
-                        });
-                        
-                        const data = await response.json();
-                        
-                        if (data.success) {
-                            document.getElementById('estimateInfo').classList.remove('hidden');
-                            document.getElementById('estimatedAmount').textContent = data.estimated_amount + ' ' + selectedCrypto.toUpperCase();
-                            document.getElementById('exchangeRate').textContent = \`1 USD = \${data.rate}\`;
-                        }
-                    } catch (error) {
-                        console.error('Error getting estimate:', error);
-                    }
-                }
-                
-                document.getElementById('paymentForm').addEventListener('submit', async function(e) {
-                    e.preventDefault();
-                    
-                    const amount = document.getElementById('amount').value;
-                    const submitBtn = document.getElementById('submitBtn');
-                    
-                    submitBtn.disabled = true;
-                    submitBtn.textContent = 'Processing...';
-                    
-                    try {
-                        const response = await fetch('/api/create-payment', {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json'
-                            },
-                            body: JSON.stringify({ 
-                                amount: parseFloat(amount),
-                                crypto: selectedCrypto
-                            }),
-                            credentials: 'include'
-                        });
-                        
-                        const data = await response.json();
-                        
-                        if (data.success) {
-                            document.getElementById('paymentDetails').classList.remove('hidden');
-                            document.getElementById('paymentInfo').innerHTML = \`
-                                <p><strong>Payment ID:</strong> \${data.payment.id}</p>
-                                <!-- <p><strong>Amount:</strong> \${data.payment.priceAmount} USD</p> -->
-                                <p><strong>Monto a pagar:</strong> \${data.payment.payAmount} \${data.payment.payCurrency.toUpperCase()}</p>
-                                <p><strong>Address:</strong> <code class="bg-gray-200 px-2 py-1 rounded">\${data.payment.payAddress}</code></p>
-                                <p class="text-sm text-gray-600 mt-2">Please send the exact amount to the address above. Your balance will be updated automatically once the payment is confirmed.</p>
-                                <div class="mt-4 flex justify-center">
-                                  <button id="checkStatusBtn"
-                                      class="flex items-center justify-center gap-2 px-5 py-3 rounded-xl 
-                                             bg-gradient-to-r from-green-500 to-emerald-600 
-                                             hover:from-green-600 hover:to-emerald-700 
-                                             text-white font-semibold text-sm shadow-lg 
-                                             hover:shadow-xl transition-all transform hover:scale-105 active:scale-95">
-                                      <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v6h6M20 20v-6h-6M4 20h6v-6M20 4h-6v6" />
-                                      </svg>
-                                      Check Payment Status
-                                  </button>
-                                </div>
-                            \`;
-                            
-                            // Generar QR code
-                            if (data.payment.qrCode) {
-                                const qrContainer = document.getElementById('qrCode');
-                                qrContainer.innerHTML = '';
-                                new QRCode(qrContainer, {
-                                    text: data.payment.qrCode,
-                                    width: 200,
-                                    height: 200,
-                                    colorDark: "#000000",
-                                    colorLight: "#ffffff",
-                                    correctLevel: QRCode.CorrectLevel.H
-                                });
-                            }
-                            
-                            submitBtn.textContent = 'Payment Created Successfully';
-                            
-                            // Agregar funcionalidad para verificar estado
-                            document.getElementById('checkStatusBtn').addEventListener('click', async function() {
-                                this.disabled = true;
-                                this.textContent = 'Checking...';
-                                
-                                try {
-                                    const statusResponse = await fetch(\`/api/payment-status?payment_id=\${data.payment.id}\`, {
-                                        method: 'GET',
-                                        credentials: 'include'
-                                    });
-                                    
-                                    const statusData = await statusResponse.json();
-                                    
-                                    if (statusData.success) {
-                                        this.textContent = \`Status: \${statusData.status}\`;
-                                        this.className = statusData.status === 'finished' ? 
-                                            'mt-3 bg-green-600 text-white px-4 py-2 rounded text-sm' : 
-                                            'mt-3 bg-yellow-600 text-white px-4 py-2 rounded text-sm';
-                                        
-                                        if (statusData.status === 'finished') {
-                                            // Mostrar mensaje de éxito
-                                            document.getElementById('paymentInfo').innerHTML += \`
-                                                <div class="mt-4 p-3 bg-green-100 border border-green-400 text-green-700 rounded">
-                                                    <strong>✅ Payment Completed!</strong><br>
-                                                    Your balance has been updated. Redirecting to game...
-                                                </div>
-                                            \`;
-                                            setTimeout(() => {
-                                                window.location.href = '/?payment=success';
-                                            }, 3000);
-                                        }
-                                    } else {
-                                        this.textContent = 'Error checking status';
-                                        this.className = 'mt-3 bg-red-600 text-white px-4 py-2 rounded text-sm';
-                                    }
-                                } catch (error) {
-                                    this.textContent = 'Error checking status';
-                                    this.className = 'mt-3 bg-red-600 text-white px-4 py-2 rounded text-sm';
-                                }
-                            });
-                            
-                            // Verificación automática cada 30 segundos
-                            let checkInterval = setInterval(async function() {
-                                try {
-                                    const statusResponse = await fetch(\`/api/payment-status?payment_id=\${data.payment.id}\`, {
-                                        method: 'GET',
-                                        credentials: 'include'
-                                    });
-                                    
-                                    const statusData = await statusResponse.json();
-                                    
-                                    if (statusData.success && statusData.status === 'finished') {
-                                        clearInterval(checkInterval);
-                                        
-                                        // Mostrar mensaje de éxito automático
-                                        document.getElementById('paymentInfo').innerHTML += \`
-                                            <div class="mt-4 p-3 bg-green-100 border border-green-400 text-green-700 rounded">
-                                                <strong>🎉 Payment Completed Automatically!</strong><br>
-                                                Your balance has been updated. Redirecting to game...
-                                            </div>
-                                        \`;
-                                        
-                                        setTimeout(() => {
-                                            window.location.href = '/?payment=success';
-                                        }, 3000);
-                                    }
-                                } catch (error) {
-                                    console.error('Auto-check error:', error);
-                                }
-                            }, 30000); // Verificar cada 30 segundos
-                        } else {
-                            alert('Error: ' + data.error);
-                            submitBtn.disabled = false;
-                            submitBtn.textContent = 'Process Payment';
-                        }
-                    } catch (error) {
-                        console.error('Error:', error);
-                        alert('Error processing payment. Please try again.');
-                        submitBtn.disabled = false;
-                        submitBtn.textContent = 'Process Payment';
-                    }
-                });
-                
-                // Cargar monedas al iniciar
-                loadCurrencies();
-            </script>
-        </body>
-        </html>
-    `);
-});
-
 // ===== NUEVA IMPLEMENTACIÓN DE PAGOS CON NOWPAYMENTS =====
 
 // Endpoint para obtener monedas disponibles
@@ -965,6 +686,83 @@ app.get('/api/currencies', async (req, res) => {
 
     } catch (error) {
         console.error('[NOWPAYMENTS] Error en currencies:', error);
+        res.status(500).json({ error: 'Error interno del servidor' });
+    }
+});
+
+//Endpoint estimate withdraw
+app.get('/api/estimate-withdraw', async (req, res) => {
+    try {
+        if (!req.user) {
+            return res.status(401).json({ error: 'Usuario no autenticado' });
+        }
+
+        const NOWPAYMENTS_API_KEY = process.env.NOWPAYMENTS_API_KEY;
+        const NOWPAYMENTS_API_URL = 'https://api.nowpayments.io/v1';
+        
+        const { amount, crypto = 'btc' } = req.query;
+        
+        if (!amount || amount <= 0) {
+            return res.status(400).json({ error: 'Monto inválido' });
+        }
+
+        console.log(`[NOWPAYMENTS] Obteniendo estimación para ${req.user.username}: $${amount} USD -> ${crypto.toUpperCase()}`);
+
+        // Configuración de NOWPayments
+
+        if (!NOWPAYMENTS_API_KEY) {
+            console.error('[NOWPAYMENTS] NOWPAYMENTS_API_KEY no está configurada en las variables de entorno');
+            return res.status(500).json({ error: 'Configuración de pagos no disponible' });
+        }
+
+
+        let estimateResponse = await fetch(`${NOWPAYMENTS_API_URL}/estimate?amount=${amount}&currency_from=usdtmatic&currency_to=${crypto}`, {
+            method: 'GET',
+            headers: {
+                'x-api-key': NOWPAYMENTS_API_KEY
+            }
+        });
+        
+        let estimateData = await estimateResponse.json();
+        let amount_crypto = estimateData.estimated_amount;
+        
+        if (!estimateResponse.ok) {
+            console.error('[NOWPAYMENTS] Error obteniendo estimación:', estimateData);
+            return res.status(500).json({ error: 'Error obteniendo estimación de pago inicial' });
+        }
+
+        estimateResponse = await fetch(`${NOWPAYMENTS_API_URL}/payout/fee?currency=${crypto}&amount=${amount_crypto}`, {
+            method: 'GET',
+            headers: {
+                'x-api-key': NOWPAYMENTS_API_KEY
+            }
+        });
+        
+        estimateData = await estimateResponse.json();
+        
+        if (!estimateResponse.ok) {
+            console.error('[NOWPAYMENTS] Error obteniendo estimación:', estimateData);
+            return res.status(500).json({ error: 'Error obteniendo estimación de pago' });
+        }
+        
+        if(crypto.toLowerCase()=="usdtmatic"){
+            estimateData.fee = estimateData.fee + amount_crypto*0.005;
+        }else{
+            estimateData.fee = estimateData.fee + amount_crypto*0.01;
+        }
+        let amount_f = amount_crypto-estimateData.fee;
+        
+        res.json({
+            success: true,
+            estimated_amount: amount_f,
+            rate: `${amount_crypto / amount} ${crypto.toUpperCase()}`,
+            currency_from: "USD",
+            currency_to: estimateData.currency,
+            fee: estimateData.fee
+        });
+
+    } catch (error) {
+        console.error('[NOWPAYMENTS] Error en estimate:', error);
         res.status(500).json({ error: 'Error interno del servidor' });
     }
 });
@@ -996,8 +794,13 @@ app.get('/api/estimate', async (req, res) => {
         console.log(`[NOWPAYMENTS] Obteniendo estimación para ${req.user.username}: $${amount} USD -> ${crypto.toUpperCase()}`);
 
         // Configuración de NOWPayments
-        const NOWPAYMENTS_API_KEY = process.env.NOWPAYMENTS_API_KEY || '9Y86N0F-CB34G0D-KMB5ZAZ-JZR9J46';
+        const NOWPAYMENTS_API_KEY = process.env.NOWPAYMENTS_API_KEY;
         const NOWPAYMENTS_API_URL = 'https://api.nowpayments.io/v1';
+
+        if (!NOWPAYMENTS_API_KEY) {
+            console.error('[NOWPAYMENTS] NOWPAYMENTS_API_KEY no está configurada en las variables de entorno');
+            return res.status(500).json({ error: 'Configuración de pagos no disponible' });
+        }
 
         // Obtener estimación
         const estimateResponse = await fetch(`${NOWPAYMENTS_API_URL}/estimate?amount=${amount}&currency_from=usd&currency_to=${crypto}`, {
@@ -1048,6 +851,11 @@ app.post('/api/create-payment', async (req, res) => {
         const NOWPAYMENTS_API_KEY = process.env.NOWPAYMENTS_API_KEY;
         const NOWPAYMENTS_API_URL = 'https://api.nowpayments.io/v1';
 
+        if (!NOWPAYMENTS_API_KEY) {
+            console.error('[NOWPAYMENTS] NOWPAYMENTS_API_KEY no está configurada en las variables de entorno');
+            return res.status(500).json({ error: 'Configuración de pagos no disponible' });
+        }
+
         // Verificar estado de la API
         try {
             const statusResponse = await fetch(`${NOWPAYMENTS_API_URL}/status`, {
@@ -1078,19 +886,18 @@ app.post('/api/create-payment', async (req, res) => {
 
         // Configuración especial para USDTMATIC
         if (c === 'usdtmatic') {
-            adjustedAmount = Math.max(amount, 2); // Mínimo $1 USDT en Polygon
+            adjustedAmount = Math.max(amount, 2)*1.005; 
             fixedRate = false;
             feePaidByUser = false;
         }
         // Configuración especial para USDTERC20
-        else if ((c.includes("usdt") || c.includes("usdc") || c.includes("fdusd")) && (c.includes("bsc") || c.includes("sol"))) {
-            adjustedAmount = Math.max(amount, 5); // Mínimo $5 USDT en ERC20
+        else if ((c.includes("usdt") || c.includes("usdc") || c.includes("fdusd")) && (c.includes("bsc") || c.includes("sol"))) { //TODO HACER QUE SE CALCULE
+            adjustedAmount = Math.max(amount, 5)*1.015;
         }
-        // Si la criptomoneda es USDT (pero no USDTMATIC), usar la misma criptomoneda como moneda de precio
         else {
-            adjustedAmount = Math.max(amount, 15); // Mínimo $5 USDT para otros
-	        fixedRate = true;
-	        feePaidByUser = true;
+            adjustedAmount = Math.max(amount, 13.5); // Mínimo $5 USDT para otros
+            fixedRate = true;
+            feePaidByUser = true;
         }
         
         // Crear el pago usando la API de NOWPayments
@@ -1104,13 +911,6 @@ app.post('/api/create-payment', async (req, res) => {
             is_fixed_rate: fixedRate,
             is_fee_paid_by_user: feePaidByUser
         };
-
-        // Agregar payout_address y payout_currency solo para USDTMATIC
-        /*if (crypto.toLowerCase() === 'usdtmatic') {
-            paymentData.payout_address = '0x9d2fd4bdb798ac2cd108c5435564ceeeb28d1178';
-            paymentData.payout_currency = 'usdtmatic';
-        }*/
-
 
 
         console.log(`[NOWPAYMENTS] Configuración de pago - Monto original: $${amount} USD, Monto ajustado: $${adjustedAmount} ${priceCurrency.toUpperCase()}, Cripto: ${crypto.toUpperCase()}`);
@@ -1138,7 +938,8 @@ app.post('/api/create-payment', async (req, res) => {
         const qrCodeData = `${crypto}:${paymentResponse.pay_address}?amount=${paymentResponse.pay_amount}`;
 
         // Guardar el pago en la base de datos
-        db.run(`INSERT INTO payments (
+        const connection = await db.getConnection();
+        await connection.execute(`INSERT INTO payments (
             user_id, payment_id, amount, currency, pay_currency, 
             pay_amount, pay_address, order_id, status, qr_code, created_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
@@ -1152,14 +953,10 @@ app.post('/api/create-payment', async (req, res) => {
             paymentData.order_id,
             'waiting',
             qrCodeData,
-            new Date().toISOString()
-        ], function(err) {
-            if (err) {
-                console.error('[NOWPAYMENTS] Error guardando pago en BD:', err);
-            } else {
-                console.log(`[NOWPAYMENTS] Pago guardado en BD - ID: ${this.lastID}`);
-            }
-        });
+        new Date().toISOString().slice(0, 19).replace('T', ' ')
+        ]);
+        connection.release();
+        console.log(`[NOWPAYMENTS] Pago guardado en BD`);
 
         res.json({
             success: true,
@@ -1198,7 +995,7 @@ app.get('/api/payment-status', async (req, res) => {
         console.log(`[NOWPAYMENTS] Verificando estado del pago: ${payment_id}`);
 
         // Configuración de NOWPayments
-        const NOWPAYMENTS_API_KEY = process.env.NOWPAYMENTS_API_KEY || '9Y86N0F-CB34G0D-KMB5ZAZ-JZR9J46';
+        const NOWPAYMENTS_API_KEY = process.env.NOWPAYMENTS_API_KEY;
         const NOWPAYMENTS_API_URL = 'https://api.nowpayments.io/v1';
 
         // Verificar estado del pago
@@ -1241,29 +1038,26 @@ app.get('/api/user-payments', async (req, res) => {
         console.log(`[NOWPAYMENTS] Obteniendo pagos para usuario: ${req.user.username}`);
 
         // Obtener pagos del usuario desde la base de datos
-        db.all(`SELECT * FROM payments WHERE user_id = ? ORDER BY created_at DESC LIMIT 10`, [req.user.id], (err, payments) => {
-            if (err) {
-                console.error('[NOWPAYMENTS] Error obteniendo pagos:', err);
-                return res.status(500).json({ error: 'Error obteniendo pagos' });
-            }
+        const connection = await db.getConnection();
+        const [payments] = await connection.execute(`SELECT * FROM payments WHERE user_id = ? ORDER BY created_at DESC LIMIT 10`, [req.user.id]);
+        connection.release();
 
-            console.log(`[NOWPAYMENTS] Pagos encontrados: ${payments.length}`);
+        console.log(`[NOWPAYMENTS] Pagos encontrados: ${payments.length}`);
 
-            res.json({
-                success: true,
-                payments: payments.map(payment => ({
-                    id: payment.payment_id,
-                    amount: payment.amount,
-                    currency: payment.currency,
-                    payCurrency: payment.pay_currency,
-                    payAmount: payment.pay_amount,
-                    payAddress: payment.pay_address,
-                    status: payment.status,
-                    orderId: payment.order_id,
-                    createdAt: payment.created_at,
-                    updatedAt: payment.updated_at
-                }))
-            });
+        res.json({
+            success: true,
+            payments: payments.map(payment => ({
+                id: payment.payment_id,
+                amount: payment.amount,
+                currency: payment.currency,
+                payCurrency: payment.pay_currency,
+                payAmount: payment.pay_amount,
+                payAddress: payment.pay_address,
+                status: payment.status,
+                orderId: payment.order_id,
+                createdAt: payment.created_at,
+                updatedAt: payment.updated_at
+            }))
         });
 
     } catch (error) {
@@ -1283,60 +1077,57 @@ app.post('/api/payment-webhook', async (req, res) => {
             order_id,
             price_amount,
             price_currency,
-            actually_paid,
+            actually_paid,  
             actually_paid_at_fiat
         } = req.body;
         
         console.log(`[NOWPAYMENTS] Webhook recibido - Payment ID: ${payment_id}, Status: ${payment_status}`);
 
         // Verificar que el pago existe en nuestra BD
-        db.get(`SELECT * FROM payments WHERE payment_id = ?`, [payment_id], async (err, payment) => {
-            if (err) {
-                console.error('[NOWPAYMENTS] Error verificando pago:', err);
-                return res.status(500).send('Error');
+        const connection = await db.getConnection();
+        const [payments] = await connection.execute(`SELECT * FROM payments WHERE payment_id = ?`, [payment_id]);
+        
+        if (payments.length === 0) {
+            console.error('[NOWPAYMENTS] Pago no encontrado en BD:', payment_id);
+            connection.release();
+            return res.status(404).send('Payment not found');
+        }
+
+        const payment = payments[0];
+
+        // Actualizar estado del pago
+        await connection.execute(`UPDATE payments SET 
+            status = ?, 
+            pay_amount = ?, 
+            updated_at = ? 
+            WHERE payment_id = ?`, 
+            [payment_status, actually_paid || pay_amount, new Date().toISOString().slice(0, 19).replace('T', ' '), payment_id]);
+
+        // Si el pago está confirmado o finalizado, agregar fondos al usuario
+        if (payment_status === 'confirmed' || payment_status === 'finished' || payment_status === 'sending') {
+            try {
+                // Usar el monto realmente pagado en USD
+                const amountToAdd = actually_paid_at_fiat || price_amount || payment.amount;
+                const newBalance = await authRepository.addWinnings(payment.user_id, amountToAdd);
+                console.log(`[NOWPAYMENTS] ✅ Fondos agregados para usuario ${payment.user_id}: $${amountToAdd} USD, nuevo balance: $${newBalance}`);
+                
+                //TODO enviar saldo
+                
+                
+                // Enviar notificación al usuario (si está conectado via WebSocket)
+                // Esto se puede implementar más adelante con WebSockets
+                console.log(`[NOWPAYMENTS] 🎉 Pago completado exitosamente para usuario ${payment.user_id}`);
+            } catch (error) {
+                console.error('[NOWPAYMENTS] ❌ Error agregando fondos:', error);
             }
+        } else if (payment_status === 'failed' || payment_status === 'expired') {
+            console.log(`[NOWPAYMENTS] ❌ Pago fallido/expirado para usuario ${payment.user_id}: ${payment_status}`);
+        } else {
+            console.log(`[NOWPAYMENTS] ⏳ Pago en progreso para usuario ${payment.user_id}: ${payment_status}`);
+        }
 
-            if (!payment) {
-                console.error('[NOWPAYMENTS] Pago no encontrado en BD:', payment_id);
-                return res.status(404).send('Payment not found');
-            }
-
-            // Actualizar estado del pago
-            db.run(`UPDATE payments SET 
-                status = ?, 
-                pay_amount = ?, 
-                updated_at = ? 
-                WHERE payment_id = ?`, 
-                [payment_status, actually_paid || pay_amount, new Date().toISOString(), payment_id], 
-                async function(err) {
-                    if (err) {
-                        console.error('[NOWPAYMENTS] Error actualizando pago:', err);
-                        return res.status(500).send('Error');
-                    }
-
-                    // Si el pago está confirmado o finalizado, agregar fondos al usuario
-                    if (payment_status === 'confirmed' || payment_status === 'finished' || payment_status === 'sending') {
-                        try {
-                            // Usar el monto realmente pagado en USD
-                            const amountToAdd = actually_paid_at_fiat || price_amount || payment.amount;
-                            const newBalance = await authRepository.addWinnings(payment.user_id, amountToAdd);
-                            console.log(`[NOWPAYMENTS] ✅ Fondos agregados para usuario ${payment.user_id}: $${amountToAdd} USD, nuevo balance: $${newBalance}`);
-                            
-                            // Enviar notificación al usuario (si está conectado via WebSocket)
-                            // Esto se puede implementar más adelante con WebSockets
-                            console.log(`[NOWPAYMENTS] 🎉 Pago completado exitosamente para usuario ${payment.user_id}`);
-                        } catch (error) {
-                            console.error('[NOWPAYMENTS] ❌ Error agregando fondos:', error);
-                        }
-                    } else if (payment_status === 'failed' || payment_status === 'expired') {
-                        console.log(`[NOWPAYMENTS] ❌ Pago fallido/expirado para usuario ${payment.user_id}: ${payment_status}`);
-                    } else {
-                        console.log(`[NOWPAYMENTS] ⏳ Pago en progreso para usuario ${payment.user_id}: ${payment_status}`);
-                    }
-
-                    res.status(200).send('OK');
-                });
-        });
+        connection.release();
+        res.status(200).send('OK');
 
     } catch (error) {
         console.error('[NOWPAYMENTS] Error en webhook:', error);
@@ -1380,10 +1171,11 @@ app.get('/api/game-history', async (req, res) => {
     }
 });
 
+//TODO revisar para que el dinero solo se sume con datos guardados en el backend(NO FRONTEND)
 app.post('/api/voluntaryDisconnect', async (req, res) => {
     try {
         const sessionToken = req.headers.authorization?.replace('Bearer ', '');
-        const { betAmount, maxMass, duration, disconnectReason } = req.body;
+        const { basura1, basura2, duration, basura3, userID} = req.body; //TODO usar userID para obtener datos
         
         console.log('[API] /api/voluntaryDisconnect recibido');
         console.log('[API] Dinero en juego (betAmount):', betAmount);
@@ -1391,7 +1183,6 @@ app.post('/api/voluntaryDisconnect', async (req, res) => {
         console.log('[API] Duración (duration):', duration);
         
         let user = null;
-        
         // Verificar autenticación (soporta tanto sessionToken como Google OAuth)
         if (sessionToken) {
             // Autenticación tradicional
@@ -1402,9 +1193,23 @@ app.post('/api/voluntaryDisconnect', async (req, res) => {
         } else {
             return res.status(401).json({ error: 'Autenticación requerida' });
         }
+
+        let datosUsuarioDesconectado = playersStatsInGame[userID];
+        if(!datosUsuarioDesconectado){
+            return res.status(401).json({ error: 'Usuario no está en partida' });
+        }
         console.log('[API] Usuario encontrado:', user.username, 'Balance actual:', user.balance);
         
-        const originalBet = req.body.originalBetAmount || 1; 
+        let originalBet = datosUsuarioDesconectado['actualMoney'] || req.body.originalBetAmount; //TODO quitar basura etc
+        let betAmount = datosUsuarioDesconectado['actualMoney'] || 2;
+        let maxMass = datosUsuarioDesconectado['actualMass'];
+        let disconnectReason = datosUsuarioDesconectado['status'];
+        if(disconnectReason == "playing"){
+            return res.status(401).json({ error: 'Usuario sigue en partida' }); //Por si intenta hacer una petición mientras está en partida
+        }
+        //TODO
+        playersStatsInGame.remove(userID);
+        //TODO REVISAR
         let returnedAmount = 0;
         let finalBalance = user.balance;
         let resultType, commissionApplied = 0;
@@ -1422,8 +1227,8 @@ app.post('/api/voluntaryDisconnect', async (req, res) => {
             returnedAmount = 0;
             
         } else if (betAmount === originalBet) {
-            // EMPATE: No se cambia el balance, pero se devuelve la apuesta original al jugador.
-            console.log('[API] EMPATE - Balance sin cambios. Devolviendo apuesta original.');
+            // EMPATE: Se devuelve la apuesta original al jugador.
+            console.log('[API] EMPATE - Devolviendo apuesta original.');
             resultType = 'tie';
             returnedAmount = originalBet;
             
@@ -1463,30 +1268,30 @@ app.post('/api/voluntaryDisconnect', async (req, res) => {
             console.log(`[API] Ganancia neta: $${winnings} | Comisión (10%): $${commissionApplied} | Ganancia neta final: $${netWinnings}`);
         }
         
-        if (returnedAmount > 0) {
-            finalBalance = await authRepository.addWinnings(user.id, returnedAmount);
+        if (resultType === 'tie') {
+            // En empate, devolver la apuesta original al balance
+            finalBalance = await authRepository.addWinnings(user.id, originalBet);
+            console.log('[API] Empate - Apuesta devuelta al balance:', finalBalance);
         } else if (disconnectReason === 'eaten') {
             // Si el jugador fue comido, mantener el balance actual (ya se descontó al iniciar)
             finalBalance = user.balance;
             console.log('[API] Jugador comido - Balance mantenido:', finalBalance);
+        } else if (returnedAmount > 0) {
+            // Para ganancias y pérdidas, agregar la cantidad devuelta
+            finalBalance = await authRepository.addWinnings(user.id, returnedAmount);
         }
         
         // Registrar en el historial (buscar la partida activa más reciente)
         try {
-            const gameRow = await new Promise((resolve, reject) => {
-                db.get(`SELECT id FROM game_history 
-                        WHERE user_id = ? AND result_type IS NULL 
-                        ORDER BY start_time DESC LIMIT 1`, 
-                        [user.id], 
-                        (err, row) => {
-                            if (err) {
-                                console.error('[API] Error buscando partida activa:', err);
-                                reject(err);
-                            } else {
-                                resolve(row);
-                            }
-                        });
-            });
+            const connection = await db.getConnection();
+            const [rows] = await connection.execute(`
+                SELECT id FROM game_history 
+                WHERE user_id = ? AND result_type IS NULL 
+                ORDER BY start_time DESC LIMIT 1
+            `, [user.id]);
+            connection.release();
+            
+            const gameRow = rows.length > 0 ? rows[0] : null;
             
             if (gameRow) {
                 console.log(`[API] Encontrada partida activa - ID: ${gameRow.id}`);
@@ -1532,13 +1337,22 @@ app.post('/api/voluntaryDisconnect', async (req, res) => {
             betAmount: originalBet
         };
         
-        updateGlobalStats(0, 0, 1)
-            .then(() => {
-                return updatePlayerLeaderboard(user.id, user.username, gameResult);
-            })
-            .catch(err => {
-                console.error('[API] Error actualizando estadísticas:', err);
-            });
+        // Solo actualizar estadísticas globales si no se actualizaron antes (para ganancias)
+        if (resultType !== 'win') {
+            updateGlobalStats(0, 0, 1)
+                .then(() => {
+                    return updatePlayerLeaderboard(user.id, user.username, gameResult);
+                })
+                .catch(err => {
+                    console.error('[API] Error actualizando estadísticas:', err);
+                });
+        } else {
+            // Para ganancias, ya se actualizó arriba, solo actualizar leaderboard
+            updatePlayerLeaderboard(user.id, user.username, gameResult)
+                .catch(err => {
+                    console.error('[API] Error actualizando leaderboard:', err);
+                });
+        }
         
         // Emitir estadísticas actualizadas
         emitStats();
@@ -1567,6 +1381,7 @@ setInterval(async () => {
 
 io.on('connection', function (socket) {
     let type = socket.handshake.query.type;
+    console.log(socket.handshake.query);
     console.log('User has connected: ', type);
     switch (type) {
         case 'player':
@@ -1594,6 +1409,7 @@ const addPlayer = (socket) => {
     socket.on('gotit', function (clientPlayerData) {
         console.log('[INFO] Player ' + clientPlayerData.name + ' connecting!');
         console.log('[SKIN_DEBUG] Datos recibidos del cliente:', JSON.stringify(clientPlayerData, null, 2));
+        console.log('[DEBUG] Socket ID:', socket.id, 'Player data:', clientPlayerData);
         
         if (map.players.findIndexByID(socket.id) > -1) {
             console.log('[INFO] Player ID is already connected, kicking.');
@@ -1604,6 +1420,7 @@ const addPlayer = (socket) => {
             socket.disconnect();
         } else {
             console.log('[INFO] Player ' + clientPlayerData.name + ' connected!');
+            console.log('[DEBUG] Bot check - userId:', clientPlayerData.userId, 'betAmount:', clientPlayerData.betAmount);
             sockets[socket.id] = socket;
 
             const sanitizedName = clientPlayerData.name.replace(/(<([^>]+)>)/ig, '');
@@ -1612,6 +1429,13 @@ const addPlayer = (socket) => {
             // Guardar información del usuario y apuesta ANTES de inicializar
             playerUserId = clientPlayerData.userId;
             playerUserIds[socket.id] = clientPlayerData.userId; // Guardar en el mapeo global
+            //TODO 
+            playersStatsInGame[clientPlayerData.userId] = {
+                "bet": clientPlayerData.betAmount,
+                "actualMoney": clientPlayerData.betAmount,
+                "status": "playing",
+                "actualMass": 0,
+            };
             playerBetAmount = clientPlayerData.betAmount || 0;
             
             // Registrar inicio de partida si hay apuesta
@@ -1631,7 +1455,7 @@ const addPlayer = (socket) => {
             currentPlayer.originalBetAmount = playerBetAmount; // Guardar apuesta original
             
             // AHORA inicializar el jugador con el dinero ya asignado
-            currentPlayer.init(generateSpawnpoint(), config.defaultPlayerMass);
+            currentPlayer.init(generateSpawnpoint(), config.defaultPlayerMass, clientPlayerData.userId);
             
             // Verificar que el dinero se asignó correctamente a la primera célula
             if (currentPlayer.cells.length > 0) {
@@ -1659,7 +1483,9 @@ const addPlayer = (socket) => {
                 console.log(`[SKIN_INIT] No se proporcionó información de skin para ${currentPlayer.name}`);
             }
             
+            console.log('[DEBUG] About to add player to map:', currentPlayer.name);
             map.players.pushNew(currentPlayer);
+            console.log('[DEBUG] Player added to map successfully');
             
             io.emit('playerJoin', { name: currentPlayer.name });
             console.log(`[BET] Player ${currentPlayer.name} joined with $${playerBetAmount}`);
@@ -1702,6 +1528,10 @@ const addPlayer = (socket) => {
 
 
     socket.on('disconnect', async () => {
+        console.log(`[DISCONNECT_START] ${currentPlayer.name} se desconectó. Razón: ${socket.disconnected ? 'socket.disconnected' : 'unknown'}`);
+        console.log(`[DISCONNECT_START] Player data: userId=${playerUserId}, betAmount=${playerBetAmount}, originalBet=${currentPlayer.originalBetAmount}`);
+        console.log(`[DISCONNECT_START] Voluntary exit: ${currentPlayer.voluntaryExit}, Was eaten: ${currentPlayer.wasEaten}`);
+        
         // Solo procesar cashout automático si NO es una desconexión voluntaria
         // y el jugador tenía una apuesta activa y NO fue comido
         if (playerUserId && playerBetAmount > 0 && currentPlayer.originalBetAmount > 0 && 
@@ -1761,7 +1591,7 @@ const addPlayer = (socket) => {
             .catch((err) => console.error("Error when attempting to log chat message", err));
     });
 
-    // Manejar desconexión voluntaria
+    // Manejar desconexión voluntaria //TODO
     socket.on('voluntaryDisconnect', () => {
         console.log(`[VOLUNTARY_DISCONNECT] ${currentPlayer.name} notificó desconexión voluntaria`);
         currentPlayer.voluntaryExit = true;
@@ -1856,13 +1686,40 @@ const addPlayer = (socket) => {
     });
 
     socket.on('1', function () {
-        // Fire food.
-        const minCellMass = config.defaultPlayerMass + config.fireFood;
-        for (let i = 0; i < currentPlayer.cells.length; i++) {
-            if (currentPlayer.cells[i].mass >= minCellMass) {
-                currentPlayer.changeCellMass(i, -config.fireFood);
-                map.massFood.addNew(currentPlayer, i, config.fireFood);
+        console.log(`[FIREFOOD_START] ${currentPlayer.name} recibió evento fire food`);
+        
+        try {
+            // Fire food con validación mejorada
+            const minCellMass = config.defaultPlayerMass + config.fireFood;
+            let cellsWithEnoughMass = 0;
+            let totalMassBefore = currentPlayer.massTotal;
+            
+            console.log(`[FIREFOOD] ${currentPlayer.name} intentando disparar comida. Masa total: ${totalMassBefore}, Masa mínima requerida: ${minCellMass}`);
+            
+            // Verificar si el jugador tiene células válidas
+            if (!currentPlayer.cells || currentPlayer.cells.length === 0) {
+                console.log(`[FIREFOOD_ERROR] ${currentPlayer.name} no tiene células válidas`);
+                return;
             }
+            
+            for (let i = 0; i < currentPlayer.cells.length; i++) {
+                if (currentPlayer.cells[i].mass >= minCellMass) {
+                    cellsWithEnoughMass++;
+                    currentPlayer.changeCellMass(i, -config.fireFood);
+                    map.massFood.addNew(currentPlayer, i, config.fireFood);
+                    console.log(`[FIREFOOD] ${currentPlayer.name} disparó comida desde célula ${i}. Masa antes: ${currentPlayer.cells[i].mass + config.fireFood}, después: ${currentPlayer.cells[i].mass}`);
+                }
+            }
+            
+            if (cellsWithEnoughMass === 0) {
+                console.log(`[FIREFOOD_WARNING] ${currentPlayer.name} no tiene células con masa suficiente (${minCellMass}+) para disparar comida`);
+            } else {
+                console.log(`[FIREFOOD_SUCCESS] ${currentPlayer.name} disparó comida desde ${cellsWithEnoughMass} célula(s)`);
+            }
+            
+            console.log(`[FIREFOOD_END] ${currentPlayer.name} completó evento fire food exitosamente`);
+        } catch (error) {
+            console.error(`[FIREFOOD_ERROR] Error procesando fire food para ${currentPlayer.name}:`, error);
         }
     });
 
@@ -1907,6 +1764,7 @@ const addPlayer = (socket) => {
                     currentPlayer.cells[i].gameMoney = 0;
                 }
                 currentPlayer.cells[i].gameMoney = moneyPerCell + (i < remainder ? 1 : 0);
+                playersStatsInGame[clientPlayerData.userId]['actualMoney'] = moneyPerCell + (i < remainder ? 1 : 0);
             }
             
             console.log(`[VIRUS] ${currentPlayer.name} dividió $${currentPlayer.gameMoney} entre ${cellCount} células`);
@@ -1924,7 +1782,7 @@ const addSpectator = (socket) => {
         emitStats();
     });
 
-    socket.emit("welcome", {}, {
+    socket.emit("welcome", currentPlayer, {
         width: config.gameWidth,
         height: config.gameHeight
     });
@@ -2025,8 +1883,10 @@ const tickPlayer = (currentPlayer) => {
             for (let index of eatenPowerFoodIndexes) {
                 const powerFood = map.powerFood.data[index];
                 if (powerFood && powerFood.isPowerFood) {
-                    // Activar el poder en la célula
-                    currentCell.activatePower(powerFood.powerType, powerFood.duration, powerFood.multiplier);
+                    // Activar el poder en TODAS las células del jugador
+                    for (let i = 0; i < currentPlayer.cells.length; i++) {
+                        currentPlayer.cells[i].activatePower(powerFood.powerType, powerFood.duration, powerFood.multiplier);
+                    }
                     
                     // Notificar al cliente sobre el poder activado
                     if (sockets[currentPlayer.id]) {
@@ -2038,7 +1898,7 @@ const tickPlayer = (currentPlayer) => {
                         });
                     }
                     
-                    console.log(`[POWER] ${currentPlayer.name} comió ${powerFood.name} - ${powerFood.powerType} activado`);
+                    console.log(`[POWER] ${currentPlayer.name} comió ${powerFood.name} - ${powerFood.powerType} activado en todas las ${currentPlayer.cells.length} células`);
                 }
             }
             map.powerFood.delete(eatenPowerFoodIndexes);
@@ -2134,11 +1994,33 @@ const tickGame = () => {
             return; // No hacer nada si tiene escudo
         }
 
-        // NUEVA LÓGICA: La célula que come se divide en 4 partes
-        const eaterCell = map.players.getCell(eater.playerIndex, eater.cellIndex);
-        console.log(`[COMBAT_DIVISION] ${eaterPlayer.name} se come a ${eatenPlayer.name} - dividiendo célula que come en 4 partes`);
+        console.log(`[COMBAT] ${eaterPlayer.name} se come la célula ${gotEaten.cellIndex} de ${eatenPlayer.name}`);
         
-        // Dividir la célula que come en 4 partes
+        // Obtener dinero de la célula específica comida
+        const cellMoney = cellGotEaten.gameMoney || 0;
+        const cellMass = cellGotEaten.mass;
+        
+        // Transferir la masa de la célula comida a la célula que come
+        eaterPlayer.changeCellMass(eater.cellIndex, cellMass);
+        
+        // Transferir el dinero de la célula comida a la célula que come
+        if (cellMoney > 0) {
+            const eaterCell = map.players.getCell(eater.playerIndex, eater.cellIndex);
+            if (!eaterCell.gameMoney) {
+                eaterCell.gameMoney = 0;
+            }
+            eaterCell.gameMoney += cellMoney;        
+            console.log(playersStatsInGame);  
+            console.log(eaterPlayer);
+
+            try{playersStatsInGame[eaterPlayer.userId]['actualMoney'] += cellMoney;
+            console.log(`[//TODOPRUEBA] ${playersStatsInGame[eaterPlayer.userId]['actualMoney']}, gameMoney = ${eaterCell.gameMoney}`);
+            }catch(e){}
+            console.log(`[COMBAT_MONEY] Célula de ${eaterPlayer.name} recibió $${cellMoney} de la célula de ${eatenPlayer.name}`);
+        }
+
+        // DIVIDIR LA CÉLULA QUE COME en 4 partes
+        console.log(`[COMBAT_DIVISION] Dividiendo célula de ${eaterPlayer.name} en 4 partes después de comer`);
         eaterPlayer.splitCell(eater.cellIndex, 4, config.defaultPlayerMass);
         
         // Notificar al jugador que come sobre la división
@@ -2155,53 +2037,56 @@ const tickGame = () => {
             sockets[eaterPlayer.id].emit('combatDivision', {
                 cells: cellsData,
                 totalMoney: eaterPlayer.getTotalMoney(),
-                message: `¡Comiste a ${eatenPlayer.name}! Tu célula se dividió en 4 partes.`
+                message: `¡Comiste una célula de ${eatenPlayer.name}! Tu célula se dividió en 4 partes.`
             });
         }
-
-        // NUEVA LÓGICA: Solo transferir todo el dinero al final, sin cálculos intermedios
-        console.log(`[COMBAT_MONEY] ${eaterPlayer.name} se come a ${eatenPlayer.name} - transferencia completa de dinero al final`);
-
-        // Transferir toda la masa de la célula comida a la célula que come
-        eaterPlayer.changeCellMass(eater.cellIndex, cellGotEaten.mass);
-
-        // NUEVO SISTEMA: GAME OVER inmediato para el jugador comido
-        console.log(`[COMBAT_GAME_OVER] ${eatenPlayer.name} fue comido - GAME OVER inmediato`);
         
-        // Marcar al jugador como comido para evitar auto-cashout
-        eatenPlayer.wasEaten = true;
+        // REMOVER SOLO LA CÉLULA ESPECÍFICA COMIDA (NO TODO EL JUGADOR)
+        console.log(`[COMBAT] Removiendo célula ${gotEaten.cellIndex} de ${eatenPlayer.name} (tenía ${eatenPlayer.cells.length} células)`);
+        eatenPlayer.removeCell(gotEaten.cellIndex);
         
-        // Transferir todo el dinero restante del jugador comido al jugador que come
-        const remainingMoney = eatenPlayer.getTotalMoney();
-        if (remainingMoney > 0) {
-            // Asignar todo el dinero a la primera célula del jugador que come
-            if (eaterPlayer.cells.length > 0) {
-                if (!eaterPlayer.cells[0].gameMoney) {
-                    eaterPlayer.cells[0].gameMoney = 0;
-                }
-                eaterPlayer.cells[0].gameMoney += remainingMoney;
-                console.log(`[COMBAT_MONEY] ${eaterPlayer.name} recibió $${remainingMoney} completo de ${eatenPlayer.name}`);
+        // VERIFICAR SI EL JUGADOR AÚN TIENE CÉLULAS
+        if (eatenPlayer.cells.length === 0) {
+            // Solo si NO tiene más células, eliminar al jugador
+            console.log(`[COMBAT_GAME_OVER] ${eatenPlayer.name} perdió todas sus células - GAME OVER`);
+            
+            // Marcar al jugador como comido para evitar auto-cashout
+            eatenPlayer.wasEaten = true;
+            
+            // GAME OVER para el jugador que perdió todas sus células
+            if (sockets[eatenPlayer.id]) {
+                //TODO hacer que aqui no se sume el saldo ni nada y modificar datos pertinentes
+                playersStatsInGame[eatenPlayer.id]['status'] == "eaten";
+                playersStatsInGame[eatenPlayer.id]['actualMoney'] == 0;
+                sockets[eatenPlayer.id].emit('gameOver', {
+                    message: '¡Perdiste! Te comieron todas tus células.',
+                    finalMoney: 0 //TODO innecesario
+                });
+            }
+            
+            // Notificar a todos los jugadores
+            io.emit('playerDied', { name: eatenPlayer.name });
+            
+            // Limpiar el mapeo de userId
+            if (playerUserIds[eatenPlayer.id]) {
+                delete playerUserIds[eatenPlayer.id];
+            }
+            
+            // Remover al jugador del juego
+            map.players.removePlayerByIndex(gotEaten.playerIndex);
+        } else {
+            // El jugador aún tiene células, solo perdió una
+            console.log(`[COMBAT] ${eatenPlayer.name} perdió una célula, le quedan ${eatenPlayer.cells.length} células`);
+            
+            // Notificar al jugador que perdió una célula
+            if (sockets[eatenPlayer.id]) {
+                sockets[eatenPlayer.id].emit('cellLost', {
+                    message: `Perdiste una célula. Te quedan ${eatenPlayer.cells.length} células.`,
+                    remainingCells: eatenPlayer.cells.length,
+                    totalMoney: eatenPlayer.getTotalMoney()
+                });
             }
         }
-        
-        // GAME OVER para el jugador comido
-        if (sockets[eatenPlayer.id]) {
-            sockets[eatenPlayer.id].emit('gameOver', {
-                message: '¡Perdiste! Fuiste comido por otro jugador.',
-                finalMoney: remainingMoney
-            });
-        }
-        
-        // Notificar a todos los jugadores
-        io.emit('playerDied', { name: eatenPlayer.name });
-        
-        // Limpiar el mapeo de userId
-        if (playerUserIds[eatenPlayer.id]) {
-            delete playerUserIds[eatenPlayer.id];
-        }
-        
-        // Remover al jugador del juego
-        map.players.removePlayerByIndex(gotEaten.playerIndex);
         
         // ALERTA GLOBAL: Notificar a todos los jugadores sobre el combate
         // Enviar solo el ID del jugador para seguimiento en tiempo real
@@ -2256,14 +2141,23 @@ const gameloop = () => {
 };
 
 const sendUpdates = () => {
-            // console.log('[SEND_UPDATES] Iniciando envío de actualizaciones...');
+    // Debug: Log cada 1000 updates para no saturar
+    if (Math.random() < 0.001) {
+        console.log('[SEND_UPDATES_DEBUG] Ejecutando sendUpdates');
+    }
+    // console.log('[SEND_UPDATES] Iniciando envío de actualizaciones...');
     spectators.forEach(updateSpectator);
     map.enumerateWhatPlayersSee(function (playerData, visiblePlayers, visibleFood, visibleMass, visibleViruses, visiblePowerFood) {
+        // Debug: Log cada 1000 enumerations para no saturar
+        if (Math.random() < 0.001) {
+            console.log(`[ENUMERATE_DEBUG] Enumerando para ${playerData.name}`);
+        }
         // Obtener bombas visibles si el evento está activo
         let visibleBombs = [];
         if (bombManager && bombEventActive) {
             visibleBombs = bombManager.getBombs();
         }
+        
         
         // Debug del servidor para ver qué jugadores se están enviando
         // console.log(`[SERVER_DEBUG] Enviando update a ${playerData.name} - Jugadores visibles: ${visiblePlayers.length}`);
@@ -2297,6 +2191,10 @@ const sendUpdates = () => {
         
         // console.log(`[RADAR_SERVER] Enviando datos de ${allPlayersData.length} jugadores a ${playerData.name}`);
         
+        // Debug: Log cada 1000 sends para no saturar
+        if (Math.random() < 0.001) {
+            console.log(`[SEND_DEBUG] Enviando serverTellPlayerMove a ${playerData.name}`);
+        }
         sockets[playerData.id].emit('serverTellPlayerMove', playerData, visiblePlayers, visibleFood, visibleMass, visibleViruses, visiblePowerFood, visibleBombs);
         
         // Enviar información de todos los jugadores para el radar
@@ -2338,7 +2236,7 @@ const updateSpectator = (socketID) => {
         visibleBombs = bombManager.getBombs();
     }
     
-    sockets[socketID].emit('serverTellPlayerMove', playerData, map.players.data, map.food.data, map.massFood.data, map.viruses.data, visibleBombs);
+    sockets[socketID].emit('serverTellPlayerMove', playerData, map.players.data, map.food.data, map.massFood.data, map.viruses.data, visibleBombs, null);
     if (leaderboardChanged) {
         sendLeaderboard(sockets[socketID]);
     }
@@ -2410,6 +2308,8 @@ function triggerAutoCashout(currentPlayer) {
         if (sockets[currentPlayer.id] && currentPlayer.gameMoney > 0) {
             console.log(`[AUTO-CASHOUT] Ejecutando cash out automático para ${currentPlayer.name}`);
             
+            //TODO hacer que aqui no se sume el saldo ni nada
+            playersStatsInGame.remove(sockets[eatenPlayer.id]);
             // Forzar desconexión voluntaria para procesar el cash out
             currentPlayer.voluntaryExit = true;
             sockets[currentPlayer.id].emit('forceCashout');
@@ -2658,92 +2558,80 @@ function scheduleBombEvent() {
 const db = require('./sql');
 
 // Función para registrar el inicio de una partida
-function recordGameStart(userId, username, betAmount) {
-    return new Promise((resolve, reject) => {
-        const startTime = new Date().toISOString();
-        db.run(`INSERT INTO game_history (user_id, username, bet_amount, final_amount, start_time) 
+async function recordGameStart(userId, username, betAmount) {
+    try {
+        const startTime = new Date().toISOString().slice(0, 19).replace('T', ' ');
+        const connection = await db.getConnection();
+        const [result] = await connection.execute(`INSERT INTO game_history (user_id, username, bet_amount, final_amount, start_time) 
                 VALUES (?, ?, ?, ?, ?)`, 
-                [userId, username, betAmount, betAmount, startTime], 
-                function(err) {
-                    if (err) {
-                        console.error('[GAME_HISTORY] Error registrando inicio de partida:', err);
-                        reject(err);
-                    } else {
-                        console.log(`[GAME_HISTORY] Partida iniciada para ${username} - ID: ${this.lastID}`);
-                        resolve(this.lastID);
-                    }
-                });
-    });
+                [userId, username, betAmount, betAmount, startTime]);
+        connection.release();
+        
+        console.log(`[GAME_HISTORY] Partida iniciada para ${username} - ID: ${result.insertId}`);
+        return result.insertId;
+    } catch (err) {
+        console.error('[GAME_HISTORY] Error registrando inicio de partida:', err);
+        throw err;
+    }
 }
 
 // Función para registrar el final de una partida (cashout)
-function recordGameEnd(gameId, finalAmount, resultType, commissionApplied, disconnectReason = 'manual_cashout', maxMass = 0) {
-    return new Promise((resolve, reject) => {
-        const endTime = new Date().toISOString();
+async function recordGameEnd(gameId, finalAmount, resultType, commissionApplied, disconnectReason = 'manual_cashout', maxMass = 0) {
+    const endTime = new Date().toISOString().slice(0, 19).replace('T', ' ');
         
         // Primero obtener la información de la partida para calcular duración
-        db.get(`SELECT start_time, bet_amount FROM game_history WHERE id = ?`, [gameId], (err, row) => {
-            if (err) {
-                console.error('[GAME_HISTORY] Error obteniendo datos de partida:', err);
-                reject(err);
-                return;
-            }
-            
-            if (!row) {
-                console.error('[GAME_HISTORY] No se encontró la partida con ID:', gameId);
-                reject(new Error('Partida no encontrada'));
-                return;
-            }
-            
-            const startTime = new Date(row.start_time);
-            const durationSeconds = Math.floor((new Date(endTime) - startTime) / 1000);
-            const returnedAmount = finalAmount - commissionApplied;
-            
-            // Actualizar el registro con el final de la partida
-            db.run(`UPDATE game_history 
-                    SET final_amount = ?, returned_amount = ?, result_type = ?, 
-                        commission_applied = ?, end_time = ?, duration_seconds = ?, 
-                        max_mass_reached = ?, disconnect_reason = ?
-                    WHERE id = ?`, 
-                    [finalAmount, returnedAmount, resultType, commissionApplied, endTime, 
-                     durationSeconds, maxMass, disconnectReason, gameId], 
-                    function(err) {
-                        if (err) {
-                            console.error('[GAME_HISTORY] Error registrando final de partida:', err);
-                            reject(err);
-                        } else {
-                            console.log(`[GAME_HISTORY] Partida finalizada - ID: ${gameId}, Resultado: ${resultType}, Duración: ${durationSeconds}s`);
-                            resolve({
-                                gameId,
-                                resultType,
-                                finalAmount,
-                                returnedAmount,
-                                durationSeconds,
-                                disconnectReason
-                            });
-                        }
-                    });
-        });
-    });
+        const connection = await db.getConnection();
+        const [rows] = await connection.execute(`SELECT start_time, bet_amount FROM game_history WHERE id = ?`, [gameId]);
+        
+        if (rows.length === 0) {
+            console.error('[GAME_HISTORY] No se encontró la partida con ID:', gameId);
+            connection.release();
+            throw new Error('Partida no encontrada');
+        }
+        
+        const row = rows[0];
+        const startTime = new Date(row.start_time);
+        const durationSeconds = Math.floor((new Date(endTime) - startTime) / 1000);
+        const returnedAmount = finalAmount - commissionApplied;
+        
+        // Actualizar el registro con el final de la partida
+        await connection.execute(`UPDATE game_history 
+                SET final_amount = ?, returned_amount = ?, result_type = ?, 
+                    commission_applied = ?, end_time = ?, duration_seconds = ?, 
+                    max_mass_reached = ?, disconnect_reason = ?
+                WHERE id = ?`, 
+                [finalAmount, returnedAmount, resultType, commissionApplied, endTime, 
+                 durationSeconds, maxMass, disconnectReason, gameId]);
+        
+        connection.release();
+        
+        console.log(`[GAME_HISTORY] Partida finalizada - ID: ${gameId}, Resultado: ${resultType}, Duración: ${durationSeconds}s`);
+        return {
+            gameId,
+            resultType,
+            finalAmount,
+            returnedAmount,
+            durationSeconds,
+            disconnectReason
+        };
 }
 
 // Función para obtener el historial de un usuario
-function getUserGameHistory(userId, limit = 50) {
-    return new Promise((resolve, reject) => {
-        db.all(`SELECT * FROM game_history 
-                WHERE user_id = ? 
-                ORDER BY created_at DESC 
-                LIMIT ?`, 
-                [userId, limit], 
-                (err, rows) => {
-                    if (err) {
-                        console.error('[GAME_HISTORY] Error obteniendo historial:', err);
-                        reject(err);
-                    } else {
-                        resolve(rows);
-                    }
-                });
-    });
+async function getUserGameHistory(userId, limit = 50) {
+    try {
+        const connection = await db.getConnection();
+        const [rows] = await connection.execute(`
+            SELECT * FROM game_history 
+            WHERE user_id = ? 
+            ORDER BY created_at DESC 
+            LIMIT ${parseInt(limit)}
+        `, [userId]);
+        connection.release();
+        return rows;
+    } catch (err) {
+        console.error('[GAME_HISTORY] Error obteniendo historial:', err);
+        throw err;
+    }
 }
 
 // Función para procesar cashout automático en desconexión
@@ -2802,27 +2690,32 @@ async function processAutoCashout(userId, username, currentBetAmount, originalBe
         let newBalance;
         if (disconnectReason === 'eaten') {
             // Si el jugador fue comido, mantener el balance actual (ya se descontó al iniciar)
-            newBalance = await getCurrentBalance(userId);
+            newBalance = await authRepository.getUserBalance(userId);
             console.log('[AUTO_CASHOUT] Jugador comido - Balance mantenido:', newBalance);
+        } else if (resultType === 'tie') {
+            // En empate, devolver la apuesta original al balance
+            newBalance = await authRepository.addWinnings(userId, originalBetAmount);
+            console.log('[AUTO_CASHOUT] Empate - Apuesta devuelta al balance:', newBalance);
         } else {
-            newBalance = await updateUserBalance(userId, returnedAmount);
+            newBalance = await authRepository.addWinnings(userId, returnedAmount);
         }
         
         // Registrar en el historial (buscar la partida activa más reciente)
-        db.get(`SELECT id FROM game_history 
+        try {
+            const connection = await db.getConnection();
+            const [rows] = await connection.execute(`
+                SELECT id FROM game_history 
                 WHERE user_id = ? AND result_type IS NULL 
-                ORDER BY start_time DESC LIMIT 1`, 
-                [userId], 
-                async (err, row) => {
-                    if (err) {
-                        console.error('[AUTO_CASHOUT] Error buscando partida activa:', err);
-                        return;
-                    }
-                    
-                    if (row) {
-                        await recordGameEnd(row.id, currentBetAmount, resultType, commissionApplied, disconnectReason, maxMass);
-                    }
-                });
+                ORDER BY start_time DESC LIMIT 1
+            `, [userId]);
+            connection.release();
+            
+            if (rows.length > 0) {
+                await recordGameEnd(rows[0].id, currentBetAmount, resultType, commissionApplied, disconnectReason, maxMass);
+            }
+        } catch (err) {
+            console.error('[AUTO_CASHOUT] Error buscando partida activa:', err);
+        }
         
         console.log(`[AUTO_CASHOUT] Cashout automático completado para ${username}`);
         console.log(`[AUTO_CASHOUT] Resultado: ${resultType}, Devuelto: $${returnedAmount}, Nuevo balance: $${newBalance}`);
@@ -2834,13 +2727,22 @@ async function processAutoCashout(userId, username, currentBetAmount, originalBe
             betAmount: originalBetAmount
         };
         
-        updateGlobalStats(0, 0, 1)
-            .then(() => {
-                return updatePlayerLeaderboard(userId, username, gameResult);
-            })
-            .catch(err => {
-                console.error('[AUTO_CASHOUT] Error actualizando estadísticas:', err);
-            });
+        // Solo actualizar estadísticas globales si no se actualizaron antes (para ganancias)
+        if (resultType !== 'win') {
+            updateGlobalStats(0, 0, 1)
+                .then(() => {
+                    return updatePlayerLeaderboard(userId, username, gameResult);
+                })
+                .catch(err => {
+                    console.error('[AUTO_CASHOUT] Error actualizando estadísticas:', err);
+                });
+        } else {
+            // Para ganancias, ya se actualizó arriba, solo actualizar leaderboard
+            updatePlayerLeaderboard(userId, username, gameResult)
+                .catch(err => {
+                    console.error('[AUTO_CASHOUT] Error actualizando leaderboard:', err);
+                });
+        }
         
         // Emitir estadísticas actualizadas
         emitStats();
@@ -2858,40 +2760,7 @@ async function processAutoCashout(userId, username, currentBetAmount, originalBe
     }
 }
 
-// Función para obtener el balance actual de usuario
-function getCurrentBalance(userId) {
-    return new Promise((resolve, reject) => {
-        db.get(`SELECT balance FROM users WHERE id = ?`, [userId], (err, row) => {
-            if (err) {
-                console.error('[AUTO_CASHOUT] Error obteniendo balance:', err);
-                reject(err);
-            } else {
-                resolve(row.balance);
-            }
-        });
-    });
-}
 
-// Función para actualizar balance de usuario
-function updateUserBalance(userId, amount) {
-    return new Promise((resolve, reject) => {
-        db.run(`UPDATE users SET balance = balance + ? WHERE id = ?`, [amount, userId], function(err) {
-            if (err) {
-                console.error('[AUTO_CASHOUT] Error actualizando balance:', err);
-                reject(err);
-            } else {
-                // Obtener el nuevo balance
-                db.get(`SELECT balance FROM users WHERE id = ?`, [userId], (err, row) => {
-                    if (err) {
-                        reject(err);
-                    } else {
-                        resolve(row.balance);
-                    }
-                });
-            }
-        });
-    });
-}
 
 setInterval(tickGame, 1000 / 60);
 setInterval(gameloop, 1000);
@@ -3235,40 +3104,40 @@ app.post('/api/test-payment', async (req, res) => {
         console.log(`[TEST] Simulando pago completado para: ${payment_id}`);
 
         // Simular pago completado
-        db.run(`UPDATE payments SET status = 'finished', updated_at = ? WHERE payment_id = ? AND user_id = ?`, 
-            [new Date().toISOString(), payment_id, req.user.id], 
-            async function(err) {
-                if (err) {
-                    console.error('[TEST] Error actualizando estado:', err);
-                    return res.status(500).json({ error: 'Error actualizando estado' });
-                }
-                if (this.changes === 0) {
-                    return res.status(404).json({ error: 'Pago no encontrado' });
-                }
+        const connection = await db.getConnection();
+        const [updateResult] = await connection.execute(`UPDATE payments SET status = 'finished', updated_at = ? WHERE payment_id = ? AND user_id = ?`, 
+            [new Date().toISOString().slice(0, 19).replace('T', ' '), payment_id, req.user.id]);
+        
+        if (updateResult.affectedRows === 0) {
+            connection.release();
+            return res.status(404).json({ error: 'Pago no encontrado' });
+        }
 
-                // Obtener el pago para agregar fondos
-                db.get(`SELECT * FROM payments WHERE payment_id = ?`, [payment_id], async (err, payment) => {
-                    if (err || !payment) {
-                        console.error('[TEST] Error obteniendo pago:', err);
-                        return res.status(500).json({ error: 'Error obteniendo pago' });
-                    }
+        // Obtener el pago para agregar fondos
+        const [payments] = await connection.execute(`SELECT * FROM payments WHERE payment_id = ?`, [payment_id]);
+        connection.release();
 
-                    try {
-                        // Agregar fondos al usuario
-                        const newBalance = await authRepository.addWinnings(req.user.id, payment.amount);
-                        console.log(`[TEST] ✅ Fondos agregados para usuario ${req.user.id}: $${payment.amount} USD, nuevo balance: $${newBalance}`);
-                        
-                        res.json({ 
-                            success: true, 
-                            message: 'Pago simulado completado exitosamente',
-                            newBalance: newBalance
-                        });
-                    } catch (error) {
-                        console.error('[TEST] Error agregando fondos:', error);
-                        res.status(500).json({ error: 'Error agregando fondos' });
-                    }
-                });
+        if (payments.length === 0) {
+            console.error('[TEST] Error obteniendo pago');
+            return res.status(500).json({ error: 'Error obteniendo pago' });
+        }
+
+        const payment = payments[0];
+
+        try {
+            // Agregar fondos al usuario
+            const newBalance = await authRepository.addWinnings(req.user.id, payment.amount);
+            console.log(`[TEST] ✅ Fondos agregados para usuario ${req.user.id}: $${payment.amount} USD, nuevo balance: $${newBalance}`);
+            
+            res.json({ 
+                success: true, 
+                message: 'Pago simulado completado exitosamente',
+                newBalance: newBalance
             });
+        } catch (error) {
+            console.error('[TEST] Error agregando fondos:', error);
+            res.status(500).json({ error: 'Error agregando fondos' });
+        }
 
     } catch (error) {
         console.error('[TEST] Error en test-payment:', error);
@@ -3292,21 +3161,17 @@ app.post('/api/update-payment-status', async (req, res) => {
         console.log(`[NOWPAYMENTS] Actualizando estado del pago ${payment_id} a ${status}`);
 
         // Actualizar el estado en la base de datos
-        db.run(`UPDATE payments SET status = ?, updated_at = ? WHERE payment_id = ? AND user_id = ?`, 
-            [status, new Date().toISOString(), payment_id, req.user.id], 
-            function(err) {
-                if (err) {
-                    console.error('[NOWPAYMENTS] Error actualizando estado:', err);
-                    return res.status(500).json({ error: 'Error actualizando estado' });
-                }
+        const connection = await db.getConnection();
+        const [result] = await connection.execute(`UPDATE payments SET status = ?, updated_at = ? WHERE payment_id = ? AND user_id = ?`, 
+            [status, new Date().toISOString().slice(0, 19).replace('T', ' '), payment_id, req.user.id]);
+        connection.release();
 
-                if (this.changes === 0) {
-                    return res.status(404).json({ error: 'Pago no encontrado' });
-                }
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ error: 'Pago no encontrado' });
+        }
 
-                console.log(`[NOWPAYMENTS] Estado actualizado para pago ${payment_id}`);
-                res.json({ success: true, message: 'Estado actualizado correctamente' });
-            });
+        console.log(`[NOWPAYMENTS] Estado actualizado para pago ${payment_id}`);
+        res.json({ success: true, message: 'Estado actualizado correctamente' });
 
     } catch (error) {
         console.error('[NOWPAYMENTS] Error en update-payment-status:', error);
@@ -3457,41 +3322,32 @@ app.post('/api/create-withdrawal', async (req, res) => {
         const withdrawalId = `W${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
         // Guardar el retiro en la base de datos
-        db.run(`INSERT INTO withdrawals (user_id, withdrawal_id, payout_id, amount, crypto_currency, crypto_amount, wallet_address, status, created_at) 
+        const connection = await db.getConnection();
+        await connection.execute(`INSERT INTO withdrawals (user_id, withdrawal_id, payout_id, amount, crypto_currency, crypto_amount, wallet_address, status, created_at) 
                 VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?)`, 
-            [req.user.id, withdrawalId, withdrawalResponse.payout_id, amount, crypto, cryptoAmount, wallet_address, new Date().toISOString()], 
-            function(err) {
-                if (err) {
-                    console.error('[WITHDRAWAL] Error guardando retiro en BD:', err);
-                    return res.status(500).json({ error: 'Error guardando retiro' });
-                }
+            [req.user.id, withdrawalId, withdrawalResponse.payout_id, amount, crypto, cryptoAmount, wallet_address, new Date().toISOString().slice(0, 19).replace('T', ' ')]);
 
-                console.log(`[WITHDRAWAL] Retiro guardado en BD - ID: ${this.lastID}`);
+        console.log(`[WITHDRAWAL] Retiro guardado en BD`);
 
-                // Descontar el monto del balance del usuario
-                const newBalance = req.user.balance - amount;
-                
-                db.run(`UPDATE users SET balance = ? WHERE id = ?`, [newBalance, req.user.id], function(err) {
-                    if (err) {
-                        console.error('[WITHDRAWAL] Error actualizando balance:', err);
-                        return res.status(500).json({ error: 'Error actualizando balance' });
-                    }
+        // Descontar el monto del balance del usuario
+        const newBalance = req.user.balance - amount;
+        
+        await connection.execute(`UPDATE users SET balance = ? WHERE id = ?`, [newBalance, req.user.id]);
+        connection.release();
 
-                    console.log(`[WITHDRAWAL] Balance actualizado para usuario ${req.user.id}: $${newBalance}`);
+        console.log(`[WITHDRAWAL] Balance actualizado para usuario ${req.user.id}: $${newBalance}`);
 
-                    res.json({
-                        success: true,
-                        withdrawal_id: withdrawalId,
-                        payout_id: withdrawalResponse.payout_id,
-                        amount: amount,
-                        crypto_amount: cryptoAmount,
-                        crypto_currency: crypto,
-                        wallet_address: wallet_address,
-                        new_balance: newBalance,
-                        message: 'Retiro creado exitosamente'
-                    });
-                });
-            });
+        res.json({
+            success: true,
+            withdrawal_id: withdrawalId,
+            payout_id: withdrawalResponse.payout_id,
+            amount: amount,
+            crypto_amount: cryptoAmount,
+            crypto_currency: crypto,
+            wallet_address: wallet_address,
+            new_balance: newBalance,
+            message: 'Retiro creado exitosamente'
+        });
 
     } catch (error) {
         console.error('[WITHDRAWAL] Error en create-withdrawal:', error);
@@ -3514,24 +3370,21 @@ app.get('/api/withdrawal-status', async (req, res) => {
         console.log(`[WITHDRAWAL] Verificando estado del retiro: ${withdrawal_id}`);
 
         // Obtener el retiro de la base de datos
-        db.get(`SELECT * FROM withdrawals WHERE withdrawal_id = ? AND user_id = ?`, 
-            [withdrawal_id, req.user.id], 
-            async (err, withdrawal) => {
-                if (err) {
-                    console.error('[WITHDRAWAL] Error obteniendo retiro:', err);
-                    return res.status(500).json({ error: 'Error obteniendo retiro' });
-                }
+        const connection = await db.getConnection();
+        const [withdrawals] = await connection.execute(`SELECT * FROM withdrawals WHERE withdrawal_id = ? AND user_id = ?`, 
+            [withdrawal_id, req.user.id]);
+        connection.release();
 
-                if (!withdrawal) {
-                    return res.status(404).json({ error: 'Retiro no encontrado' });
-                }
+        if (withdrawals.length === 0) {
+            return res.status(404).json({ error: 'Retiro no encontrado' });
+        }
 
-                console.log('[WITHDRAWAL] Estado del retiro:', withdrawal);
-                res.json({
-                    success: true,
-                    withdrawal: withdrawal
-                });
-            });
+        const withdrawal = withdrawals[0];
+        console.log('[WITHDRAWAL] Estado del retiro:', withdrawal);
+        res.json({
+            success: true,
+            withdrawal: withdrawal
+        });
 
     } catch (error) {
         console.error('[WITHDRAWAL] Error en withdrawal-status:', error);
@@ -3576,21 +3429,17 @@ app.get('/api/user-withdrawals', async (req, res) => {
 
         console.log(`[WITHDRAWAL] Obteniendo retiros para usuario: ${req.user.username}`);
 
-        db.all(`SELECT * FROM withdrawals WHERE user_id = ? ORDER BY created_at DESC`, 
-            [req.user.id], 
-            (err, withdrawals) => {
-                if (err) {
-                    console.error('[WITHDRAWAL] Error obteniendo retiros:', err);
-                    return res.status(500).json({ error: 'Error obteniendo retiros' });
-                }
+        const connection = await db.getConnection();
+        const [withdrawals] = await connection.execute(`SELECT * FROM withdrawals WHERE user_id = ? ORDER BY created_at DESC`, 
+            [req.user.id]);
+        connection.release();
 
-                console.log(`[WITHDRAWAL] Retiros encontrados: ${withdrawals.length}`);
+        console.log(`[WITHDRAWAL] Retiros encontrados: ${withdrawals.length}`);
 
-                res.json({
-                    success: true,
-                    withdrawals: withdrawals
-                });
-            });
+        res.json({
+            success: true,
+            withdrawals: withdrawals
+        });
 
     } catch (error) {
         console.error('[WITHDRAWAL] Error en user-withdrawals:', error);
@@ -3606,46 +3455,40 @@ app.post('/api/withdrawal-webhook', async (req, res) => {
         console.log(`[WITHDRAWAL_WEBHOOK] Webhook recibido - Payout ID: ${payout_id}, Status: ${payment_status}`);
 
         // Buscar el retiro en la base de datos
-        db.get(`SELECT * FROM withdrawals WHERE payout_id = ?`, [payout_id], async (err, withdrawal) => {
-            if (err) {
-                console.error('[WITHDRAWAL_WEBHOOK] Error verificando retiro:', err);
-                return res.status(500).send('Error');
-            }
+        const connection = await db.getConnection();
+        const [withdrawals] = await connection.execute(`SELECT * FROM withdrawals WHERE payout_id = ?`, [payout_id]);
+        
+        if (withdrawals.length === 0) {
+            console.error('[WITHDRAWAL_WEBHOOK] Retiro no encontrado en BD:', payout_id);
+            connection.release();
+            return res.status(404).send('Retiro no encontrado');
+        }
 
-            if (!withdrawal) {
-                console.error('[WITHDRAWAL_WEBHOOK] Retiro no encontrado en BD:', payout_id);
-                return res.status(404).send('Retiro no encontrado');
-            }
+        const withdrawal = withdrawals[0];
 
-            // Actualizar el estado del retiro
-            let newStatus = 'pending';
-            if (payment_status === 'finished') {
-                newStatus = 'completed';
-            } else if (payment_status === 'failed' || payment_status === 'expired') {
-                newStatus = 'failed';
-            } else if (payment_status === 'confirming') {
-                newStatus = 'processing';
-            }
+        // Actualizar el estado del retiro
+        let newStatus = 'pending';
+        if (payment_status === 'finished') {
+            newStatus = 'completed';
+        } else if (payment_status === 'failed' || payment_status === 'expired') {
+            newStatus = 'failed';
+        } else if (payment_status === 'confirming') {
+            newStatus = 'processing';
+        }
 
-            db.run(`UPDATE withdrawals SET status = ?, transaction_hash = ?, updated_at = ? WHERE payout_id = ?`, 
-                [newStatus, transaction_hash || null, new Date().toISOString(), payout_id], 
-                function(err) {
-                    if (err) {
-                        console.error('[WITHDRAWAL_WEBHOOK] Error actualizando retiro:', err);
-                        return res.status(500).send('Error');
-                    }
+        await connection.execute(`UPDATE withdrawals SET status = ?, transaction_hash = ?, updated_at = ? WHERE payout_id = ?`, 
+            [newStatus, transaction_hash || null, new Date().toISOString().slice(0, 19).replace('T', ' '), payout_id]);
 
-                    if (newStatus === 'completed') {
-                        console.log(`[WITHDRAWAL_WEBHOOK] ✅ Retiro completado exitosamente para usuario ${withdrawal.user_id}`);
-                    } else if (newStatus === 'failed') {
-                        console.log(`[WITHDRAWAL_WEBHOOK] ❌ Retiro fallido para usuario ${withdrawal.user_id}: ${payment_status}`);
-                    } else {
-                        console.log(`[WITHDRAWAL_WEBHOOK] ⏳ Retiro en progreso para usuario ${withdrawal.user_id}: ${payment_status}`);
-                    }
+        if (newStatus === 'completed') {
+            console.log(`[WITHDRAWAL_WEBHOOK] ✅ Retiro completado exitosamente para usuario ${withdrawal.user_id}`);
+        } else if (newStatus === 'failed') {
+            console.log(`[WITHDRAWAL_WEBHOOK] ❌ Retiro fallido para usuario ${withdrawal.user_id}: ${payment_status}`);
+        } else {
+            console.log(`[WITHDRAWAL_WEBHOOK] ⏳ Retiro en progreso para usuario ${withdrawal.user_id}: ${payment_status}`);
+        }
 
-                    res.status(200).send('OK');
-                });
-        });
+        connection.release();
+        res.status(200).send('OK');
 
     } catch (error) {
         console.error('[WITHDRAWAL_WEBHOOK] Error en webhook:', error);

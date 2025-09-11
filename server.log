@@ -1,0 +1,37 @@
+nohup: ignoring input
+[dotenv@17.2.1] injecting env (11) from .env -- tip: ⚙️  load multiple .env files with { path: ['.env.local', '.env'] }
+[dotenv@17.2.1] injecting env (0) from .env -- tip: 📡 auto-backup env with Radar: https://dotenvx.com/radar
+[REDZONE] Calculando radio para 0 jugadores: min=1750, base=3500, max=4900, resultado=1750
+[REDZONE] Zona roja inicializada con radio: 1750
+[REDZONE] Configuración: enabled=true, damagePerSecond=10
+[BOMB_EVENT] Gestor de bombas inicializado
+[INDEPENDENT_BOTS] 8 bots independientes activados
+[INDEPENDENT_BOTS] Gestor de bots independientes inicializado
+[PASSPORT] Verificando credenciales de Google OAuth...
+[PASSPORT] clientID: SET
+[PASSPORT] clientSecret: SET
+[PASSPORT] Configurando Google OAuth con credenciales disponibles
+[PASSPORT] Estrategia de Google OAuth registrada exitosamente
+[PASSPORT] Estrategias registradas: [ 'session', 'google' ]
+[SERVER] Verificando estrategias de Passport antes de definir rutas: [ 'session', 'google' ]
+[SPEED_EVENT] Programando próximo evento de velocidad en 5 minutos (5 alertas de cuenta regresiva: 1, 2, 3, 4, 5 minutos antes)
+node:events:496
+      throw er; // Unhandled 'error' event
+      ^
+
+Error: listen EADDRINUSE: address already in use 0.0.0.0:3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at node:net:2206:7
+    at process.processTicksAndRejections (node:internal/process/task_queues:90:21)
+Emitted 'error' event on Server instance at:
+    at emitErrorNT (node:net:1976:8)
+    at process.processTicksAndRejections (node:internal/process/task_queues:90:21) {
+  code: 'EADDRINUSE',
+  errno: -98,
+  syscall: 'listen',
+  address: '0.0.0.0',
+  port: 3000
+}
+
+Node.js v22.18.0

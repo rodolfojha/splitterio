@@ -30,8 +30,8 @@ module.exports = {
     backgroundColor: '#f2fbff',
     lineColor: '#000000',
     // Betting system variables
-    betAmount: 0, // Stores the current player's bet amount
-    originalBetAmount: 0, // Stores the original bet amount
+    betAmount: 0, // Stores the current player's bet amount NO QUITAR PERO NO USAR COMO PARA MANDAR DATOS A BACKEND
+    originalBetAmount: 0, // Stores the original bet amount NO QUITAR PERO NO USAR COMO PARA MANDAR DATOS A BACKEND
     voluntaryExit: false, // Flag for voluntary disconnection
     // Cash out system variables
     cashOutProgress: 0,

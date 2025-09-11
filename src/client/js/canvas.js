@@ -142,8 +142,17 @@ class Canvas {
     keyInput(event) {
     	var key = event.which || event.keyCode;
     	if (key === global.KEY_FIREFOOD && this.parent.reenviar) {
-            this.parent.socket.emit('1');
-            this.parent.reenviar = false;
+            // Validar que el jugador tenga masa suficiente antes de disparar comida
+            if (this.canUseFireFood()) {
+                this.parent.socket.emit('1');
+                this.parent.reenviar = false;
+            } else {
+                console.log('[FIREFOOD] No tienes masa suficiente para disparar comida');
+                // Mostrar mensaje al usuario si está disponible
+                if (window.chat && window.chat.addSystemLine) {
+                    window.chat.addSystemLine(' ❌ No tienes masa suficiente para disparar comida');
+                }
+            }
         }
         else if (key === global.KEY_SPLIT && this.parent.reenviar) {
             document.getElementById('split_cell').play();
@@ -153,6 +162,33 @@ class Canvas {
         else if (key === global.KEY_CHAT) {
             document.getElementById('chatInput').focus();
         }
+    }
+
+    // Verificar si el jugador puede usar el poder de disparar comida
+    canUseFireFood() {
+        // Verificar si tenemos información del jugador
+        if (!global.player || !global.player.cells || global.player.cells.length === 0) {
+            console.log('[FIREFOOD_DEBUG] No hay información del jugador disponible');
+            return false;
+        }
+
+        // Verificar si alguna célula tiene masa suficiente
+        // La masa mínima requerida es defaultPlayerMass + fireFood (10 + 20 = 30)
+        const minRequiredMass = 30; // config.defaultPlayerMass + config.fireFood
+        
+        console.log(`[FIREFOOD_DEBUG] Verificando ${global.player.cells.length} células. Masa mínima requerida: ${minRequiredMass}`);
+        
+        for (let i = 0; i < global.player.cells.length; i++) {
+            const cellMass = global.player.cells[i].mass;
+            console.log(`[FIREFOOD_DEBUG] Célula ${i}: masa = ${cellMass}`);
+            if (cellMass >= minRequiredMass) {
+                console.log(`[FIREFOOD_DEBUG] Célula ${i} puede disparar comida`);
+                return true;
+            }
+        }
+        
+        console.log('[FIREFOOD_DEBUG] Ninguna célula tiene masa suficiente');
+        return false;
     }
 }
 
