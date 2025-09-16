@@ -5,10 +5,7 @@
 | client/js/chat-client.js | 24 | Break out many of these GameControls into separate classes.
 
 ### IMPORTANTES
-# Actualizar status y betAmount en server facilmente -> debería de actualizarse en algún sitio con el gameMoney
-# Hacer que el cashout no se haga desde el frontend(se crea un betId y se maneja en caché -> En BD no es posible sin lag)
-# Server.js y app.js revisar TODOS Para acabar esto
-# Quitar variables importantes de gloobal.js
+# Quitar variables importantes de global.js
 
 
 # Gestionar todo esto con CUSTODY

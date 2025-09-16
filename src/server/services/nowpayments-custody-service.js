@@ -132,6 +132,47 @@ class NowPaymentsCustodyService {
         }
     }
 
+    async transferCustodyBalance(toId, fromId, balance) {
+        try {
+            let token = await getValidToken();
+            console.log(`[NOWPAYMENTS_CUSTODY] Añadiendo balance para custody ID: ${toId}`);
+
+            if (!this.apiKey) {
+                throw new Error('NOWPAYMENTS_API_KEY no está configurada');
+            }
+
+            const response = await fetch(`${this.apiUrl}/sub-partner/transfer`, {
+                method: 'POST',
+                headers: {
+                    'x-api-key': this.apiKey,
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    currency: 'usdtmatic',
+                    amount: balance,
+                    from_id: fromId,
+                    to_id: toId
+                })
+            });
+
+            if (!response.ok) {
+                const errorData = await response.text();
+                console.error(`[NOWPAYMENTS_CUSTODY] Error obteniendo balance:`, errorData);
+                throw new Error(`Error obteniendo balance: ${response.status} - ${errorData}`);
+            }
+
+            const result = await response.json();
+            console.log(`[NOWPAYMENTS_CUSTODY] Balance obtenido:`, result);
+
+            return result.result;
+
+        } catch (error) {
+            console.error(`[NOWPAYMENTS_CUSTODY] Error obteniendo balance:`, error);
+            throw error;
+        }
+    }
+
     /**
      * Obtener el balance de un usuario custody
      * @param {string} custodyId - ID del custody user

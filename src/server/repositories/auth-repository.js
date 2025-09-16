@@ -394,7 +394,7 @@ class AuthRepository {
                 
                 // Obtener balance actual
                 const [currentRows] = await connection.execute(
-                    'SELECT balance FROM users WHERE id = ?',
+                    'SELECT balance, nowpayments_custody_id FROM users WHERE id = ?',
                     [userId]
                 );
                 
@@ -403,14 +403,26 @@ class AuthRepository {
                     reject(new Error('Usuario no encontrado'));
                     return;
                 }
-                
-                const currentBalance = Number(currentRows[0].balance) || 0;
-                
+                /*
+                let currentBalance = Number(currentRows[0].balance) || 0;
+                const custodyBalance = await nowPaymentsCustodyService.getCustodyBalance(currentRows[0].nowpayments_custody_id);
+                const custodyBalance2 = await nowPaymentsCustodyService.getCustodyBalance(process.env.NOWPAYMENTS_PLAYING_ID);
+
+                let currentCustodyBalance = (custodyBalance.balances.usdtmatic)?(custodyBalance.balances.usdtmatic.amount+custodyBalance.balances.usdtmatic.pendingAmount):12;
+                console.log(JSON.stringify(custodyBalance, null, 2));
+                console.log(JSON.stringify(custodyBalance2, null, 2));
+
+
+                if(currentCustodyBalance != currentBalance){ //Priorizamos el custodyBalance
+                    currentBalance = currentCustodyBalance;
+                    //reject(new Error('Saldos incorrectos. Reasignando.'));
+                }*/
                 if (currentBalance < betAmount) {
                     connection.release();
                     reject(new Error('Saldo insuficiente para la apuesta'));
                     return;
                 }
+                //await nowPaymentsCustodyService.transferCustodyBalance(process.env.NOWPAYMENTS_PLAYING_ID, currentRows[0].nowpayments_custody_id, betAmount);
                 
                 const newBalance = Number((currentBalance - betAmount).toFixed(2));
                 
@@ -429,25 +441,32 @@ class AuthRepository {
     }
 
     // Agregar ganancias al balance del usuario
-    addWinnings(userId, amount) {
+    addWinnings(userId, amount, comision = 0, playing = true) { 
         return new Promise(async (resolve, reject) => {
             try {
                 const connection = await this.db.getConnection();
                 
                 // Obtener balance actual
                 const [currentRows] = await connection.execute(
-                    'SELECT balance FROM users WHERE id = ?',
+                    'SELECT balance, nowpayments_custody_id FROM users WHERE id = ?',
                     [userId]
-                );
+                );             
                 
                 if (currentRows.length === 0) {
                     connection.release();
                     reject(new Error('Usuario no encontrado'));
                     return;
-                }
+                }                
                 
                 const currentBalance = Number(currentRows[0].balance) || 0;
                 const newBalance = (parseFloat(currentBalance) + parseFloat(amount)).toFixed(2);
+                
+                if(comision>0){
+                    await nowPaymentsCustodyService.transferCustodyBalance(process.env.NOWPAYMENTS_COMISSIONS_ID, process.env.NOWPAYMENTS_PLAYING_ID, comision);
+                }
+                if(!playing){
+                    await nowPaymentsCustodyService.createCustodyDeposit(process.env.NOWPAYMENTS_PLAYING_ID,"usdtmatic",amount); //Añadir a jugadores ese saldo(discernir)
+                }
                 
                 // Actualizar balance
                 await connection.execute(

@@ -11,6 +11,9 @@ var global = require('./global');
 var playerNameInput = document.getElementById('playerNameInput');
 var socket;
 
+// Configuración del backend
+var BACKEND_URL = 'https://usa.backspitta.xyz';
+
 // Variables para el ping de latencia
 var pingStartTime = 0;
 var currentPing = 0;
@@ -21,7 +24,7 @@ var statsUpdateInterval = null;
 
 // Función para cargar estadísticas iniciales
 function loadInitialStats() {
-    fetch('/api/stats')
+    fetch(BACKEND_URL + '/api/stats')
         .then(response => response.json())
         .then(data => {
             if (data.success) {
@@ -71,7 +74,7 @@ function stopStatsUpdates() {
 
 // Función para cargar el leaderboard
 function loadLeaderboard() {
-    fetch('/api/leaderboard')
+    fetch(BACKEND_URL + '/api/leaderboard')
         .then(response => response.json())
         .then(data => {
             if (data.success) {
@@ -157,7 +160,7 @@ function startGame(type) {
         document.getElementById('gameAreaWrapper').classList.add('active');
     }
     if (!socket) {
-        socket = io({ query: "type=" + type });
+        socket = io(BACKEND_URL, { query: "type=" + type });
         setupSocket(socket);
     }
     if (!global.animLoopHandle)
@@ -247,7 +250,7 @@ function processBet(betAmount) {
     }
     // Para usuarios de Google OAuth, usamos cookies de sesión (no necesitamos Authorization header)
 
-    fetch('/api/bet', {
+    fetch(BACKEND_URL + '/api/bet', {
         method: 'POST',
         headers: headers,
         body: JSON.stringify({ betAmount: betAmount }),
@@ -298,7 +301,7 @@ function startGameWithBet(betAmount) {
     }
     
     if (!socket) {
-        socket = io({ query: "type=player" });
+        socket = io(BACKEND_URL, { query: "type=player" });
         setupSocket(socket);
     }
     if (!global.animLoopHandle)
@@ -453,7 +456,7 @@ function loginWithGoogle() {
 
 function logoutUser() {
     // Verificar si es una sesión de Google
-    fetch('/api/auth/status')
+    fetch(BACKEND_URL + '/api/auth/status')
     .then(response => response.json())
     .then(data => {
         if (data.authenticated) {
@@ -462,7 +465,7 @@ function logoutUser() {
         } else {
             // Es una sesión normal, usar la API de logout
             if (sessionToken) {
-                fetch('/api/logout', {
+                fetch(BACKEND_URL + '/api/logout', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -483,7 +486,7 @@ function logoutUser() {
         console.error('Error verificando tipo de sesión:', error);
         // Fallback a logout normal
         if (sessionToken) {
-            fetch('/api/logout', {
+            fetch(BACKEND_URL + '/api/logout', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -502,7 +505,7 @@ function checkAuthStatus() {
     console.log('Verificando estado de autenticación...');
     
     // Primero verificar si hay una sesión de Google activa
-    fetch('/api/auth/status', {
+    fetch(BACKEND_URL + '/api/auth/status', {
         credentials: 'include' // Incluir cookies para sesiones de Google OAuth
     })
     .then(response => {
@@ -549,7 +552,7 @@ function checkAuthStatus() {
                 console.log('Datos de usuario encontrados en localStorage:', currentUser);
                 
                 // Verificar que el token aún sea válido
-                fetch('/api/balance', {
+                fetch(BACKEND_URL + '/api/balance', {
                     headers: {
                         'Authorization': 'Bearer ' + savedToken
                     }
@@ -640,7 +643,7 @@ function updateUserBalance() {
         return;
     }
     
-    fetch('/api/balance', {
+    fetch(BACKEND_URL + '/api/balance', {
         headers: {
             'Authorization': 'Bearer ' + sessionToken
         }
@@ -1080,7 +1083,7 @@ function handleDisconnect() {
         }
         
         // Llamar a la API de cashout //TODO aqui solo pasar el id de usuario no el betAmount puesto que sino puede modificarse o alterarse
-        fetch('/api/voluntaryDisconnect', {
+        fetch(BACKEND_URL + '/api/voluntaryDisconnect', {
             method: 'POST',
             headers: headers,
             body: JSON.stringify({ 
@@ -1146,30 +1149,10 @@ function completeDisconnect() {
         // Mostrar mensaje de desconexin
         render.drawErrorMessage('Disconnected!', graph, global.screen);
         
-        // Despus de 2 segundos, volver al men principal
+        
         setTimeout(() => {
-            // Usar las nuevas funciones del diseo
-            if (typeof showMainMenu === 'function') {
-                showMainMenu();
-            } else {
-                // Fallback al mtodo anterior
-                document.getElementById('gameAreaWrapper').classList.remove('active');
-                const mainSection = document.getElementById('mainGameSection');
-                if (mainSection) {
-                    mainSection.style.display = 'block';
-                }
-            }
-            
-            if (global.animLoopHandle) {
-                window.cancelAnimationFrame(global.animLoopHandle);
-                global.animLoopHandle = undefined;
-            }
-            // Ocultar controles del juego
-            document.getElementById('gameControls').style.display = 'none';
-            
-            // Reiniciar actualizaciones de estadísticas cuando regresa al lobby
-            startStatsUpdates();
-        }, 2000);
+            window.location.replace("https://splittaio.com");
+        }, 3500);
     }
 }
 
@@ -1648,7 +1631,7 @@ function setupSocket(socket) {
             }
             
             // Llamar a la API para registrar la partida //TODO lo suyo esto no debería ni de estar puesto que sino no tiene sentido puede alterarse quitar en VOLUNTARYDISCONNECT DATOS(ESOS LOS GUARDA EL SERVIDOR)
-            fetch('/api/voluntaryDisconnect', {
+            fetch(BACKEND_URL + '/api/voluntaryDisconnect', {
                 method: 'POST',
                 headers: headers,
                 body: JSON.stringify({ 
@@ -1736,6 +1719,10 @@ function setupSocket(socket) {
         else {
             render.drawErrorMessage('You were kicked!', graph, global.screen);
         }
+        setTimeout(() => {
+            window.location.replace("https://splittaio.com");
+        }, 3500);
+        
         socket.close();
     });
 

@@ -11,7 +11,16 @@ const session = require('express-session');
 const passport = require('passport');
 const app = express();
 const http = require('http').Server(app);
-const io = require('socket.io')(http);
+const io = require("socket.io")(http, {
+  pingInterval: 10000, // cada cuánto envía ping
+  pingTimeout: 60000,  // 2 minutos de espera antes de desconectar
+  cors: {
+    origin: ["https://splittaio.com", "https://www.splittaio.com", "https://usa.backspitta.xyz"],  // frontend permitido
+    methods: ["GET", "POST"],         // métodos permitidos
+    allowedHeaders: ["Content-Type", "Authorization"],
+    credentials: true
+  }
+});
 const SAT = require('sat');
 
 const { RedZone } = require('./game-logic');
@@ -52,7 +61,7 @@ if (config.globalEvents && config.globalEvents.bombEvent && config.globalEvents.
 let sockets = {};
 let spectators = [];
 let playerUserIds = {}; // Mapeo de socket.id -> userId
-let playersStatsInGame = {}; //TODO BET, ACTUAL MONEY, Y COMO MURIÓ EL JUGADOR. se puede incluir masa y duración si se ve necesario 
+let playersStatsInGame = {}; //TODO guardar IP para comprobaciones de mas seguridad(si se accede de otra IP con mismo id etc etc desconectar)
 const INIT_MASS_LOG = util.mathLog(config.defaultPlayerMass, config.slowBase);
 
 let leaderboard = [];
@@ -263,6 +272,15 @@ function startStatsUpdate() {
 
 const Vector = SAT.Vector;
 
+// Configuración CORS para permitir conexiones desde el frontend
+const cors = require('cors');
+app.use(cors({
+    origin: ["https://splittaio.com", "https://www.splittaio.com", "https://usa.backspitta.xyz"],
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+}));
+
 // Configuración de sesión
 const authConfig = require('../../config/google-auth');
 app.use(session(authConfig.session));
@@ -357,57 +375,6 @@ app.get('/api/balance', async (req, res) => {
         res.json({ balance: balance });
     } catch (error) {
         res.status(401).json({ error: error.message });
-    }
-});
-
-// Endpoint para crear custody para usuarios existentes
-app.post('/api/create-custody', async (req, res) => {
-    try {
-        console.log('[CUSTODY] Solicitud de creación de custody recibida');
-
-	const token = await getValidToken();
-
-        // Verificar autenticación
-        let user = null;
-        if (req.isAuthenticated()) {
-            user = req.user;
-        } else {
-            const sessionToken = req.headers.authorization?.replace('Bearer ', '');
-            if (!sessionToken) {
-                return res.status(401).json({ error: 'Usuario no autenticado' });
-            }
-            user = await authRepository.verifySession(sessionToken);
-        }
-
-        console.log(`[CUSTODY] Creando custody para usuario: ${user.username} (ID: ${user.id})`);
-
-        // Verificar si ya tiene custody ID
-        if (user.nowpayments_custody_id) {
-            return res.json({
-                success: true,
-                message: 'Usuario ya tiene custody ID',
-                custodyId: user.nowpayments_custody_id
-            });
-        }
-
-        // Crear custody
-        const custodyId = await authRepository.createCustodyForExistingUser(user.id);
-        
-        console.log(`[CUSTODY] Custody creado exitosamente para usuario ${user.id}: ${custodyId}`);
-        
-        res.json({
-            success: true,
-            message: 'Custody creado exitosamente',
-            custodyId: custodyId
-        });
-
-    } catch (error) {
-        console.error('[CUSTODY] Error creando custody:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Error interno del servidor',
-            message: error.message
-        });
     }
 });
 
@@ -1175,12 +1142,10 @@ app.get('/api/game-history', async (req, res) => {
 app.post('/api/voluntaryDisconnect', async (req, res) => {
     try {
         const sessionToken = req.headers.authorization?.replace('Bearer ', '');
-        const { basura1, basura2, duration, basura3, userID} = req.body; //TODO usar userID para obtener datos
-        
+        const { duration } = req.body; //TODO usar userID para obtener datos
+        let userID = req.body.userId;
+        console.log(req.body);
         console.log('[API] /api/voluntaryDisconnect recibido');
-        console.log('[API] Dinero en juego (betAmount):', betAmount);
-        console.log('[API] Masa máxima (maxMass):', maxMass);
-        console.log('[API] Duración (duration):', duration);
         
         let user = null;
         // Verificar autenticación (soporta tanto sessionToken como Google OAuth)
@@ -1200,19 +1165,24 @@ app.post('/api/voluntaryDisconnect', async (req, res) => {
         }
         console.log('[API] Usuario encontrado:', user.username, 'Balance actual:', user.balance);
         
-        let originalBet = datosUsuarioDesconectado['actualMoney'] || req.body.originalBetAmount; //TODO quitar basura etc
-        let betAmount = datosUsuarioDesconectado['actualMoney'] || 2;
+        let originalBet = datosUsuarioDesconectado['bet']; //TODO quitar basura etc
+        let betAmount = datosUsuarioDesconectado['actualMoney'];
         let maxMass = datosUsuarioDesconectado['actualMass'];
         let disconnectReason = datosUsuarioDesconectado['status'];
-        if(disconnectReason == "playing"){
-            return res.status(401).json({ error: 'Usuario sigue en partida' }); //Por si intenta hacer una petición mientras está en partida
+        if((!["playing","eaten", "voluntaryDisconnect"].includes(disconnectReason))){
+            return res.status(401).json({ error: 'Status no reconocido' }); //Por si intenta hacer una petición mientras está en partida
         }
-        //TODO
-        playersStatsInGame.remove(userID);
-        //TODO REVISAR
+        if("playing" == disconnectReason){
+            disconnectReason = "voluntaryDisconnect";
+        }
+        delete playersStatsInGame[userID]; //Eliminar de dict usuario para evitar ps multipeticiones etc
+        //TODO NO SE SUMA EL DINERO BIEN
         let returnedAmount = 0;
         let finalBalance = user.balance;
         let resultType, commissionApplied = 0;
+
+        console.log(user.id);
+        console.log(userID);
 
         console.log('[API] === LÓGICA DE CASHOUT SIMPLIFICADA ===');
         console.log('[API] Apuesta original:', originalBet);
@@ -1242,13 +1212,13 @@ app.post('/api/voluntaryDisconnect', async (req, res) => {
             // GANANCIA: Se aplica 10% de comisión y se devuelve el resto.
             console.log('[API] GANANCIA - Aplicando comisión del 10%.');
             resultType = 'win';
-            const winnings = betAmount - originalBet;
-            commissionApplied = Math.round(winnings * 0.1 * 100) / 100;
-            const netWinnings = winnings - commissionApplied;
-            returnedAmount = originalBet + netWinnings;
+            commissionApplied = Math.round(betAmount * 0.1 * 100) / 100;
+            const netWinnings = betAmount - commissionApplied;
+            returnedAmount = (originalBet > netWinnings)?betAmount:netWinnings; // Mínimo entre originalBet y netWinnings
+            winnings += returnedAmount - (betAmount - originalBet);
             
             // Actualizar estadísticas globales
-            globalWinnings += winnings;
+            globalWinnings += winnings; //TODO hacer que se guarde en BD
             
             // Actualizar estadísticas en la base de datos
             updateGlobalStats(winnings, 0, 1)
@@ -1270,6 +1240,7 @@ app.post('/api/voluntaryDisconnect', async (req, res) => {
         
         if (resultType === 'tie') {
             // En empate, devolver la apuesta original al balance
+            
             finalBalance = await authRepository.addWinnings(user.id, originalBet);
             console.log('[API] Empate - Apuesta devuelta al balance:', finalBalance);
         } else if (disconnectReason === 'eaten') {
@@ -1411,12 +1382,16 @@ const addPlayer = (socket) => {
         console.log('[SKIN_DEBUG] Datos recibidos del cliente:', JSON.stringify(clientPlayerData, null, 2));
         console.log('[DEBUG] Socket ID:', socket.id, 'Player data:', clientPlayerData);
         
-        if (map.players.findIndexByID(socket.id) > -1) {
+        if (map.players.findIndexByID(socket.id) > -1 || playersStatsInGame[clientPlayerData.userId]) {
             console.log('[INFO] Player ID is already connected, kicking.');
+            socket.emit('kick', 'Player alredy connected.');
+            console.log(clientPlayerData);
+            authRepository.addWinnings(clientPlayerData.userId, clientPlayerData.betAmount);
             socket.disconnect();
         } else if (!util.validNick(clientPlayerData.name)) {
             console.log(`[VALIDATION_ERROR] Nombre inválido: "${clientPlayerData.name}" - Longitud: ${clientPlayerData.name.length}`);
             socket.emit('kick', 'Invalid username.');
+            authRepository.addWinnings(clientPlayerData.userId, currentPlayer.betAmount);
             socket.disconnect();
         } else {
             console.log('[INFO] Player ' + clientPlayerData.name + ' connected!');
@@ -1429,7 +1404,7 @@ const addPlayer = (socket) => {
             // Guardar información del usuario y apuesta ANTES de inicializar
             playerUserId = clientPlayerData.userId;
             playerUserIds[socket.id] = clientPlayerData.userId; // Guardar en el mapeo global
-            //TODO 
+
             playersStatsInGame[clientPlayerData.userId] = {
                 "bet": clientPlayerData.betAmount,
                 "actualMoney": clientPlayerData.betAmount,
@@ -1539,7 +1514,8 @@ const addPlayer = (socket) => {
             try {
                 const currentMoney = currentPlayer.getTotalMoney() || playerBetAmount;
                 const maxMass = currentPlayer.massTotal || 0;
-                
+
+                if(sockets[socket.id]) sockets[currentPlayer.id].emit('kick', 'Desconexión inesperada.');
                 console.log(`[DISCONNECT] Procesando cashout automático para ${currentPlayer.name} (desconexión no voluntaria)`);
                 
                 await processAutoCashout(
@@ -1572,6 +1548,12 @@ const addPlayer = (socket) => {
         
         // Actualizar estadísticas después de la desconexión
         emitStats();
+        if(sockets[socket.id]) delete sockets[currentPlayer.id];
+        if(playersStatsInGame[currentPlayer.userId]){
+            let userID = currentPlayer.userId;
+            let datosUsuarioDesconectado = playersStatsInGame[userID];
+            delete playersStatsInGame[userID]; 
+        }
     });
 
     socket.on('playerChat', (data) => {
@@ -1591,7 +1573,7 @@ const addPlayer = (socket) => {
             .catch((err) => console.error("Error when attempting to log chat message", err));
     });
 
-    // Manejar desconexión voluntaria //TODO
+    // Manejar desconexión voluntaria //TODO por?
     socket.on('voluntaryDisconnect', () => {
         console.log(`[VOLUNTARY_DISCONNECT] ${currentPlayer.name} notificó desconexión voluntaria`);
         currentPlayer.voluntaryExit = true;
@@ -1789,9 +1771,12 @@ const addSpectator = (socket) => {
 }
 
 const tickPlayer = (currentPlayer) => {
+    if(!sockets[currentPlayer.id]){
+        console.log("QUE VAINA PASÓ?");
+    }
     if (currentPlayer.lastHeartbeat < new Date().getTime() - config.maxHeartbeatInterval) {
-        sockets[currentPlayer.id].emit('kick', 'Last heartbeat received over ' + config.maxHeartbeatInterval + ' ago.');
-        sockets[currentPlayer.id].disconnect();
+        console.log(currentPlayer.id);
+        if(sockets[currentPlayer.id]) sockets[currentPlayer.id].disconnect();
     }
 
     // Aplicar multiplicador de velocidad global si el evento está activo
@@ -1957,10 +1942,13 @@ const tickPlayer = (currentPlayer) => {
 };
 
 const tickGame = () => {
+    
+    map.players.data.forEach(tickPlayer);
     // Limpiar sockets desconectados
     Object.keys(sockets).forEach(socketId => {
-        if (!sockets[socketId] || !sockets[socketId].connected) {
-            delete sockets[socketId];
+            //console.log(socketId);
+        if ((!sockets[socketId] || !sockets[socketId].connected)) {
+            console.log(socketId);
             // Remover de espectadores si está ahí
             const spectatorIndex = spectators.indexOf(socketId);
             if (spectatorIndex > -1) {
@@ -1968,8 +1956,6 @@ const tickGame = () => {
             }
         }
     });
-    
-    map.players.data.forEach(tickPlayer);
     map.massFood.move(config.gameWidth, config.gameHeight);
     
     // Actualizar posición de las bombas si el evento está activo
@@ -2009,13 +1995,9 @@ const tickGame = () => {
             if (!eaterCell.gameMoney) {
                 eaterCell.gameMoney = 0;
             }
-            eaterCell.gameMoney += cellMoney;        
-            console.log(playersStatsInGame);  
-            console.log(eaterPlayer);
+            eaterCell.gameMoney += cellMoney;   
+            playersStatsInGame[eaterPlayer.userId]['actualMoney'] += cellMoney;
 
-            try{playersStatsInGame[eaterPlayer.userId]['actualMoney'] += cellMoney;
-            console.log(`[//TODOPRUEBA] ${playersStatsInGame[eaterPlayer.userId]['actualMoney']}, gameMoney = ${eaterCell.gameMoney}`);
-            }catch(e){}
             console.log(`[COMBAT_MONEY] Célula de ${eaterPlayer.name} recibió $${cellMoney} de la célula de ${eatenPlayer.name}`);
         }
 
@@ -2055,12 +2037,11 @@ const tickGame = () => {
             
             // GAME OVER para el jugador que perdió todas sus células
             if (sockets[eatenPlayer.id]) {
-                //TODO hacer que aqui no se sume el saldo ni nada y modificar datos pertinentes
-                playersStatsInGame[eatenPlayer.id]['status'] == "eaten";
-                playersStatsInGame[eatenPlayer.id]['actualMoney'] == 0;
+                playersStatsInGame[eatenPlayer.userId]['status'] = "eaten";
+                playersStatsInGame[eatenPlayer.userId]['actualMoney'] = 0;
                 sockets[eatenPlayer.id].emit('gameOver', {
                     message: '¡Perdiste! Te comieron todas tus células.',
-                    finalMoney: 0 //TODO innecesario
+                    finalMoney: 0 
                 });
             }
             
@@ -2307,9 +2288,7 @@ function triggerAutoCashout(currentPlayer) {
     setTimeout(() => {
         if (sockets[currentPlayer.id] && currentPlayer.gameMoney > 0) {
             console.log(`[AUTO-CASHOUT] Ejecutando cash out automático para ${currentPlayer.name}`);
-            
-            //TODO hacer que aqui no se sume el saldo ni nada
-            playersStatsInGame.remove(sockets[eatenPlayer.id]);
+            playersStatsInGame[currentPlayer.id]['status'] = "autoCashout";
             // Forzar desconexión voluntaria para procesar el cash out
             currentPlayer.voluntaryExit = true;
             sockets[currentPlayer.id].emit('forceCashout');
